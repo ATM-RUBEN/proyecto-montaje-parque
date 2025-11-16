@@ -52,136 +52,212 @@ def obtener_trabajador_desde_pin(pin_introducido: str):
     return None
 
 
-# ----------- FORMULARIO HTML ADAPTADO A MÓVIL (CUADROS GRANDES) ------------
+# ----------- FORMULARIO HTML CON LOGO ATM Y COLORES CORPORATIVOS ------------
 HTML_FORM = """
 <!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registro de montaje</title>
+    <title>Registro de montaje - ATM España</title>
     <style>
+      :root {
+        --atm-red: #e30613;
+        --atm-red-dark: #c40010;
+        --atm-gray-bg: #f9fafb;
+        --atm-border: #e5e7eb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
         font-family: Arial, sans-serif;
         margin: 0;
         padding: 0;
-        background: #f3f4f6;
+        background: var(--atm-gray-bg);
       }
+
       .container {
         max-width: 480px;
         margin: 0 auto;
-        padding: 18px;
+        padding: 16px;
       }
-      h2 {
-        font-size: 1.5rem;
-        text-align: center;
-        margin-bottom: 18px;
+
+      .card {
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+        padding: 18px 16px 22px 16px;
+        border: 1px solid var(--atm-border);
       }
+
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .logo {
+        height: 40px;
+        width: auto;
+      }
+
+      .title-block {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .app-title {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: var(--atm-red);
+        line-height: 1.1;
+      }
+
+      .app-subtitle {
+        font-size: 0.90rem;
+        color: #4b5563;
+      }
+
+      .section-title {
+        margin-top: 6px;
+        font-size: 0.95rem;
+        color: #6b7280;
+      }
+
       label {
         display: block;
-        margin-top: 18px;
-        font-size: 1.1rem;
+        margin-top: 16px;
+        font-size: 1.02rem;
+        color: #111827;
       }
+
       input, select, textarea {
         width: 100%;
-        padding: 16px;
+        padding: 14px;
         margin-top: 6px;
-        font-size: 1.15rem;
+        font-size: 1.05rem;
         border-radius: 10px;
-        border: 1px solid #cbd5e1;
+        border: 1px solid var(--atm-border);
       }
+
+      input:focus, select:focus, textarea:focus {
+        outline: 2px solid var(--atm-red);
+        border-color: var(--atm-red);
+      }
+
       textarea {
         resize: vertical;
-        min-height: 100px;
+        min-height: 90px;
       }
+
       button {
-        margin-top: 24px;
+        margin-top: 22px;
         padding: 16px;
         width: 100%;
-        font-size: 1.2rem;
-        background: #2563eb;
+        font-size: 1.1rem;
+        background: var(--atm-red);
         color: white;
         border: none;
-        border-radius: 12px;
+        border-radius: 999px;
         font-weight: bold;
       }
+
       button:active {
         transform: scale(0.98);
+        background: var(--atm-red-dark);
       }
+
       .msg {
-        margin-top: 10px;
+        margin-top: 12px;
         color: #16a34a;
-        font-size: 1rem;
+        font-size: 0.95rem;
       }
+
       .error {
-        margin-top: 10px;
+        margin-top: 12px;
         color: #dc2626;
-        font-size: 1rem;
+        font-size: 0.95rem;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <h2>Registro de montaje - Parque solar</h2>
+      <div class="card">
 
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          {% for category, message in messages %}
-            <div class="{{ category }}">{{ message }}</div>
-          {% endfor %}
-        {% endif %}
-      {% endwith %}
+        <div class="header">
+          <img src="{{ url_for('static', filename='logo_atm.png') }}" alt="ATM España" class="logo">
+          <div class="title-block">
+            <span class="app-title">ATM España</span>
+            <span class="app-subtitle">Registro de montaje · Parque solar</span>
+          </div>
+        </div>
 
-      <form method="post">
+        <p class="section-title">Introduce los datos del montaje en campo.</p>
 
-        <label>PIN trabajador:
-          <input type="password" name="pin" required>
-        </label>
-
-        <label>CT (Centro de Transformación):
-          <select name="ct">
-            {% for i in cts %}
-              <option value="{{ i }}">{{ i }}</option>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="{{ category }}">{{ message }}</div>
             {% endfor %}
-          </select>
-        </label>
+          {% endif %}
+        {% endwith %}
 
-        <label>Campo / Área:
-          <select name="campo">
-            {% for i in campos %}
-              <option value="{{ i }}">{{ i }}</option>
-            {% endfor %}
-          </select>
-        </label>
+        <form method="post">
 
-        <label>Nº Mesa:
-          <select name="mesa">
-            {% for i in mesas %}
-              <option value="{{ i }}">{{ i }}</option>
-            {% endfor %}
-          </select>
-        </label>
+          <label>PIN trabajador:
+            <input type="password" name="pin" required>
+          </label>
 
-        <label>Par de apriete:
-          <select name="par_apriete">
-            <option value="OK">OK</option>
-            <option value="NO OK">NO OK</option>
-          </select>
-        </label>
+          <label>CT (Centro de Transformación):
+            <select name="ct">
+              {% for i in cts %}
+                <option value="{{ i }}">{{ i }}</option>
+              {% endfor %}
+            </select>
+          </label>
 
-        <label>PPI:
-          <select name="ppi">
-            <option value="OK">OK</option>
-            <option value="NO OK">NO OK</option>
-          </select>
-        </label>
+          <label>Campo / Área:
+            <select name="campo">
+              {% for i in campos %}
+                <option value="{{ i }}">{{ i }}</option>
+              {% endfor %}
+            </select>
+          </label>
 
-        <label>Observaciones:
-          <textarea name="observaciones"></textarea>
-        </label>
+          <label>Nº Mesa:
+            <select name="mesa">
+              {% for i in mesas %}
+                <option value="{{ i }}">{{ i }}</option>
+              {% endfor %}
+            </select>
+          </label>
 
-        <button type="submit">Guardar registro</button>
-      </form>
+          <label>Par de apriete:
+            <select name="par_apriete">
+              <option value="OK">OK</option>
+              <option value="NO OK">NO OK</option>
+            </select>
+          </label>
+
+          <label>PPI:
+            <select name="ppi">
+              <option value="OK">OK</option>
+              <option value="NO OK">NO OK</option>
+            </select>
+          </label>
+
+          <label>Observaciones:
+            <textarea name="observaciones"></textarea>
+          </label>
+
+          <button type="submit">Guardar registro</button>
+
+        </form>
+      </div>
     </div>
   </body>
 </html>
@@ -191,7 +267,6 @@ HTML_FORM = """
 # -------------------------- LÓGICA FLASK -------------------------------
 @app.route("/", methods=["GET", "POST"])
 def formulario():
-
     if request.method == "POST":
         pin = request.form.get("pin", "")
         ct = request.form.get("ct", "")
