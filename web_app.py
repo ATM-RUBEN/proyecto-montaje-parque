@@ -10,6 +10,7 @@ MAX_CT = 100
 MAX_CAMPO = 10000
 MAX_MESA = 10000
 
+# PIN asociados a cada trabajador
 TRABAJADORES_PIN = {
     "1": "1111",
     "2": "2222",
@@ -51,25 +52,77 @@ def obtener_trabajador_desde_pin(pin_introducido: str):
     return None
 
 
+# ----------- FORMULARIO HTML ADAPTADO A MÓVIL (CUADROS GRANDES) ------------
 HTML_FORM = """
 <!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8">
-    <title>Registro de montaje - Parque solar</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de montaje</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 20px; }
-      .container { max-width: 600px; margin: auto; }
-      label { display: block; margin-top: 10px; }
-      input, select, textarea { width: 100%; padding: 6px; margin-top: 4px; }
-      button { margin-top: 15px; padding: 10px 20px; }
-      .msg { margin-top: 10px; color: green; }
-      .error { margin-top: 10px; color: red; }
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: #f3f4f6;
+      }
+      .container {
+        max-width: 480px;
+        margin: 0 auto;
+        padding: 18px;
+      }
+      h2 {
+        font-size: 1.5rem;
+        text-align: center;
+        margin-bottom: 18px;
+      }
+      label {
+        display: block;
+        margin-top: 18px;
+        font-size: 1.1rem;
+      }
+      input, select, textarea {
+        width: 100%;
+        padding: 16px;
+        margin-top: 6px;
+        font-size: 1.15rem;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 100px;
+      }
+      button {
+        margin-top: 24px;
+        padding: 16px;
+        width: 100%;
+        font-size: 1.2rem;
+        background: #2563eb;
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-weight: bold;
+      }
+      button:active {
+        transform: scale(0.98);
+      }
+      .msg {
+        margin-top: 10px;
+        color: #16a34a;
+        font-size: 1rem;
+      }
+      .error {
+        margin-top: 10px;
+        color: #dc2626;
+        font-size: 1rem;
+      }
     </style>
   </head>
   <body>
     <div class="container">
-      <h2>Registro de montaje - Parque solar (WEB)</h2>
+      <h2>Registro de montaje - Parque solar</h2>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -80,6 +133,7 @@ HTML_FORM = """
       {% endwith %}
 
       <form method="post">
+
         <label>PIN trabajador:
           <input type="password" name="pin" required>
         </label>
@@ -123,7 +177,7 @@ HTML_FORM = """
         </label>
 
         <label>Observaciones:
-          <textarea name="observaciones" rows="4"></textarea>
+          <textarea name="observaciones"></textarea>
         </label>
 
         <button type="submit">Guardar registro</button>
@@ -134,8 +188,10 @@ HTML_FORM = """
 """
 
 
+# -------------------------- LÓGICA FLASK -------------------------------
 @app.route("/", methods=["GET", "POST"])
 def formulario():
+
     if request.method == "POST":
         pin = request.form.get("pin", "")
         ct = request.form.get("ct", "")
@@ -145,11 +201,13 @@ def formulario():
         ppi = request.form.get("ppi", "")
         observaciones = request.form.get("observaciones", "")
 
+        # Validación del PIN
         trabajador = obtener_trabajador_desde_pin(pin)
         if trabajador is None:
             flash("PIN incorrecto. No se ha guardado el registro.", "error")
             return redirect(url_for("formulario"))
 
+        # Validación numérica
         try:
             ct_int = int(ct)
             campo_int = int(campo)
@@ -159,7 +217,6 @@ def formulario():
             return redirect(url_for("formulario"))
 
         hoy = date.today()
-
         df = cargar_datos()
 
         nuevo_registro = {
@@ -179,7 +236,7 @@ def formulario():
         flash(f"✅ Registro guardado correctamente para el trabajador {trabajador}.", "msg")
         return redirect(url_for("formulario"))
 
-    # GET: mostrar formulario
+    # GET — mostrar formulario
     cts = list(range(1, MAX_CT + 1))
     campos = list(range(1, MAX_CAMPO + 1))
     mesas = list(range(1, MAX_MESA + 1))
@@ -188,6 +245,4 @@ def formulario():
 
 
 if __name__ == "__main__":
-    # debug=True es útil en desarrollo; luego se quita en producción
-   app.run(debug=True)
-
+    app.run(debug=True)
