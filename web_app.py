@@ -1,3 +1,4 @@
+
 from flask import Flask, request, redirect, url_for, flash, render_template_string
 from datetime import date
 from pathlib import Path
@@ -83,6 +84,22 @@ HTML_FORM = """
         max-width: 480px;
         margin: 0 auto;
         padding: 16px;
+      }
+
+      .top-nav {
+        text-align: right;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+      }
+
+      .link-resumen {
+        color: var(--atm-red);
+        text-decoration: none;
+        font-weight: bold;
+      }
+
+      .link-resumen:hover {
+        text-decoration: underline;
       }
 
       .card {
@@ -186,6 +203,11 @@ HTML_FORM = """
   </head>
   <body>
     <div class="container">
+
+      <div class="top-nav">
+        <a href="{{ url_for('resumen') }}" class="link-resumen">📊 Ver resumen e informes</a>
+      </div>
+
       <div class="card">
 
         <div class="header">
@@ -264,7 +286,160 @@ HTML_FORM = """
 """
 
 
-# -------------------------- LÓGICA FLASK -------------------------------
+# ----------- PÁGINA DE RESUMEN / INFORMES ----------------
+HTML_RESUMEN = """
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resumen de montaje - ATM España</title>
+    <style>
+      :root {
+        --atm-red: #e30613;
+        --atm-gray-bg: #f9fafb;
+        --atm-border: #e5e7eb;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: var(--atm-gray-bg);
+      }
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      .top-nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+      }
+      .link-resumen {
+        color: var(--atm-red);
+        text-decoration: none;
+        font-weight: bold;
+      }
+      .link-resumen:hover {
+        text-decoration: underline;
+      }
+      .logo {
+        height: 34px;
+        width: auto;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+        padding: 18px 16px 22px 16px;
+        border: 1px solid var(--atm-border);
+        margin-bottom: 16px;
+      }
+      h2 {
+        font-size: 1.3rem;
+        margin: 0 0 6px 0;
+      }
+      h3 {
+        font-size: 1.05rem;
+        margin-top: 0;
+      }
+      .kpi {
+        font-size: 1.2rem;
+        font-weight: bold;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+      }
+      th, td {
+        border: 1px solid var(--atm-border);
+        padding: 6px 4px;
+        text-align: center;
+      }
+      th {
+        background: #f3f4f6;
+      }
+      @media (max-width: 600px) {
+        table {
+          font-size: 0.75rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+
+      <div class="top-nav">
+        <a href="{{ url_for('formulario') }}" class="link-resumen">⬅ Volver al registro</a>
+        <img src="{{ url_for('static', filename='logo_atm.png') }}" alt="ATM España" class="logo">
+      </div>
+
+      <div class="card">
+        <h2>Resumen de montaje</h2>
+        <p>Total de registros: <span class="kpi">{{ total_registros }}</span></p>
+        {% if prod_dia %}
+          <h3>Producción por día (últimos días con registros)</h3>
+          <table>
+            <tr>
+              <th>Fecha</th>
+              <th>Nº de registros</th>
+            </tr>
+            {% for fila in prod_dia %}
+              <tr>
+                <td>{{ fila["Fecha"] }}</td>
+                <td>{{ fila["Registros"] }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          <p>Aún no hay datos para resumir.</p>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <h3>Últimos 50 registros</h3>
+        {% if ultimos %}
+          <table>
+            <tr>
+              <th>Fecha</th>
+              <th>Trabajador</th>
+              <th>CT</th>
+              <th>Campo/Área</th>
+              <th>Nº Mesa</th>
+              <th>Par apriete</th>
+              <th>PPI</th>
+              <th>Observaciones</th>
+            </tr>
+            {% for r in ultimos %}
+              <tr>
+                <td>{{ r["Fecha"] }}</td>
+                <td>{{ r["Trabajador"] }}</td>
+                <td>{{ r["CT"] }}</td>
+                <td>{{ r["Campo/Área"] }}</td>
+                <td>{{ r["Nº Mesa"] }}</td>
+                <td>{{ r["Par de apriete"] }}</td>
+                <td>{{ r["PPI"] }}</td>
+                <td>{{ r["Observaciones"] }}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          <p>No hay registros todavía.</p>
+        {% endif %}
+      </div>
+
+    </div>
+  </body>
+</html>
+"""
+
+
+# -------------------------- RUTAS FLASK -------------------------------
 @app.route("/", methods=["GET", "POST"])
 def formulario():
     if request.method == "POST":
@@ -317,6 +492,46 @@ def formulario():
     mesas = list(range(1, MAX_MESA + 1))
 
     return render_template_string(HTML_FORM, cts=cts, campos=campos, mesas=mesas)
+
+
+@app.route("/resumen")
+def resumen():
+    df = cargar_datos()
+    total_registros = len(df)
+
+    if total_registros == 0:
+        return render_template_string(
+            HTML_RESUMEN,
+            total_registros=0,
+            prod_dia=[],
+            ultimos=[],
+        )
+
+    df = df.copy()
+    # Convertir fechas a texto para mostrar
+    df["Fecha"] = df["Fecha"].astype(str)
+
+    # Producción por día (hasta 10 últimos días con registros)
+    prod_dia_df = (
+        df.groupby("Fecha")
+        .size()
+        .reset_index(name="Registros")
+        .sort_values("Fecha", ascending=False)
+        .head(10)
+    )
+    prod_dia = prod_dia_df.to_dict(orient="records")
+
+    # Últimos 50 registros
+    ultimos_df = df.sort_index(ascending=False).head(50)
+    ultimos_df = ultimos_df.iloc[::-1]  # para mostrarlos en orden cronológico
+    ultimos = ultimos_df.to_dict(orient="records")
+
+    return render_template_string(
+        HTML_RESUMEN,
+        total_registros=total_registros,
+        prod_dia=prod_dia,
+        ultimos=ultimos,
+    )
 
 
 if __name__ == "__main__":
