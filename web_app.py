@@ -598,6 +598,7 @@ def logout():
 
 @app.route("/", methods=["GET", "POST"])
 def formulario():
+    # Si no hay trabajador en sesión, ir al login
     if "trabajador_id" not in session:
         return redirect(url_for("login"))
 
@@ -614,13 +615,42 @@ def formulario():
         check_list = request.form.get("check_list")
         observaciones = request.form.get("observaciones")
 
+        # Completar horas si vienen vacías
         if not hora_fin:
             hora_fin = datetime.now().strftime("%H:%M")
         if not hora_inicio:
             hora_inicio = hora_fin
 
+        # Cargar datos existentes
         df = cargar_datos()
 
+        # 🔍 Comprobar si ya existe esa estructura con los mismos estados
+        mismos_ct_campo_mesa = df[
+            (df["CT"] == ct) &
+            (df["Campo/Área"] == campo) &
+            (df["Nº Mesa"] == mesa)
+        ]
+
+        if not mismos_ct_campo_mesa.empty:
+            mismos_todo = mismos_ct_campo_mesa[
+                (mismos_ct_campo_mesa["Par de apriete"] == par_apriete) &
+                (mismos_ct_campo_mesa["CHECK LIST"] == check_list)
+            ]
+
+            # Si ya hay al menos un registro con exactamente CT, Campo, Mesa,
+            # Par de apriete y CHECK LIST iguales → bloquear
+            if not mismos_todo.empty:
+                flash(
+                    "Esta estructura ya ha sido registrada anteriormente. "
+                    "Por favor, contacta con tu supervisor para aclarar esta situación.",
+                    "error",
+                )
+                return redirect(url_for("formulario"))
+
+            # Si existe misma estructura pero con estados distintos,
+            # se permite guardar (caso de corrección)
+
+        # Crear nuevo registro
         nuevo = {
             "ID trabajador": trabajador_id,
             "Trabajador": trabajador_nombre,
@@ -635,12 +665,14 @@ def formulario():
             "Observaciones": observaciones,
         }
 
+        # Añadir y guardar
         df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
         guardar_datos(df)
 
         flash("Registro guardado.", "msg")
         return redirect(url_for("formulario"))
 
+    # GET: mostrar formulario
     return render_template_string(
         HTML_FORM,
         trabajador_nombre=trabajador_nombre,
@@ -648,6 +680,7 @@ def formulario():
         campos=list(range(1, MAX_CAMPO + 1)),
         mesas=list(range(1, MAX_MESA + 1)),
     )
+
 
 
 @app.route("/resumen")
