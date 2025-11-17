@@ -14,6 +14,7 @@ import pandas as pd
 # -------- CONFIGURACIÓN --------
 EXCEL_FILE = "registro_montaje.xlsx"
 TRABAJADORES_FILE = "TRABAJADORES PIN.xlsx"
+AUDIT_FILE = "auditoria_cambios.xlsx"
 
 MAX_CT = 100
 MAX_CAMPO = 10000
@@ -118,6 +119,49 @@ def cargar_datos():
 
 def guardar_datos(df):
     df.to_excel(EXCEL_FILE, index=False)
+
+
+def guardar_auditoria(lista_cambios):
+    """
+    Guarda en AUDIT_FILE la lista de cambios realizados.
+    Cada elemento de lista_cambios es un diccionario con:
+    - Fecha cambio
+    - Hora cambio
+    - ID editor
+    - Editor
+    - Rol editor
+    - Row ID
+    - CT
+    - Campo/Área
+    - Nº Mesa
+    - Campo modificado
+    - Valor anterior
+    - Valor nuevo
+    """
+    path = Path(AUDIT_FILE)
+    if path.exists():
+        df_a = pd.read_excel(path)
+    else:
+        df_a = pd.DataFrame(
+            columns=[
+                "Fecha cambio",
+                "Hora cambio",
+                "ID editor",
+                "Editor",
+                "Rol editor",
+                "Row ID",
+                "CT",
+                "Campo/Área",
+                "Nº Mesa",
+                "Campo modificado",
+                "Valor anterior",
+                "Valor nuevo",
+            ]
+        )
+
+    df_nuevos = pd.DataFrame(lista_cambios)
+    df_final = pd.concat([df_a, df_nuevos], ignore_index=True)
+    df_final.to_excel(AUDIT_FILE, index=False)
 
 
 def obtener_trabajador_desde_pin(pin_introducido: str):
@@ -574,6 +618,12 @@ HTML_RESUMEN = """
       h2, h3 {
         margin-top: 10px;
       }
+
+      .btn-editar {
+        color: var(--atm-red);
+        text-decoration: none;
+        font-weight: bold;
+      }
     </style>
   </head>
 
@@ -586,9 +636,9 @@ HTML_RESUMEN = """
       </div>
 
       <h2>Resumen total del proyecto</h2>
-      <p>Total de registros: <strong>{{ total_registros }}</strong></p>
+      <p>Total de registros visibles: <strong>{{ total_registros }}</strong></p>
 
-      <h3>Producción por día (todos los días)</h3>
+      <h3>Producción por día (todos los días visibles)</h3>
       <table>
         <tr>
           <th>Fecha</th>
@@ -602,7 +652,7 @@ HTML_RESUMEN = """
         {% endfor %}
       </table>
 
-      <h3>Todos los registros del proyecto</h3>
+      <h3>Registros detallados</h3>
       <table>
         <tr>
           <th>Fecha</th>
@@ -616,6 +666,9 @@ HTML_RESUMEN = """
           <th>Par apriete</th>
           <th>CHECK LIST</th>
           <th>Observaciones</th>
+          {% if puede_editar %}
+            <th>Acciones</th>
+          {% endif %}
         </tr>
         {% for r in registros %}
         <tr>
@@ -630,10 +683,164 @@ HTML_RESUMEN = """
           <td>{{ r["Par de apriete"] }}</td>
           <td>{{ r["CHECK LIST"] }}</td>
           <td>{{ r["Observaciones"] }}</td>
+          {% if puede_editar %}
+            <td>
+              <a href="{{ url_for('editar_registro', row_id=r['row_id']) }}" class="btn-editar">
+                ✏️ Editar
+              </a>
+            </td>
+          {% endif %}
         </tr>
         {% endfor %}
       </table>
 
+    </div>
+  </body>
+</html>
+"""
+
+
+# ----------- PANTALLA EDICIÓN ------------
+HTML_EDITAR = """
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editar registro - ATM España</title>
+    <style>
+      :root {
+        --atm-red: #e30613;
+        --atm-gray-bg: #f9fafb;
+        --atm-border: #e5e7eb;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        background: var(--atm-gray-bg);
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        max-width: 480px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 18px 16px 22px 16px;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+        border: 1px solid var(--atm-border);
+      }
+      h2 {
+        margin-top: 0;
+        margin-bottom: 10px;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+        font-size: 0.95rem;
+        color: #111827;
+      }
+      input, select, textarea {
+        width: 100%;
+        padding: 10px;
+        margin-top: 4px;
+        font-size: 0.95rem;
+        border-radius: 8px;
+        border: 1px solid var(--atm-border);
+      }
+      input[readonly] {
+        background: #f3f4f6;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 70px;
+      }
+      button {
+        margin-top: 18px;
+        width: 100%;
+        padding: 12px;
+        font-size: 1rem;
+        background: var(--atm-red);
+        color: white;
+        border: none;
+        border-radius: 999px;
+        font-weight: bold;
+      }
+      .top-nav {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .link {
+        color: var(--atm-red);
+        text-decoration: none;
+        font-weight: bold;
+      }
+      .info {
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-top: 6px;
+      }
+      .error {
+        margin-top: 10px;
+        color: #dc2626;
+        font-size: 0.9rem;
+      }
+      .msg {
+        margin-top: 10px;
+        color: #16a34a;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+
+      <div class="top-nav">
+        <a href="{{ url_for('resumen') }}" class="link">⬅ Volver al resumen</a>
+        <img src="{{ url_for('static', filename='logo_atm.png') }}" height="30">
+      </div>
+
+      <div class="card">
+        <h2>Editar registro</h2>
+
+        <div class="info">
+          CT {{ reg["CT"] }} · Campo {{ reg["Campo/Área"] }} · Mesa {{ reg["Nº Mesa"] }}<br>
+          Fecha: {{ reg["Fecha"] }} · Trabajador: {{ reg["Trabajador"] }}
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="post">
+          <label>Par de apriete:
+            <select name="par_apriete">
+              <option value="OK" {% if reg["Par de apriete"] == "OK" %}selected{% endif %}>OK</option>
+              <option value="NO OK" {% if reg["Par de apriete"] == "NO OK" %}selected{% endif %}>NO OK</option>
+            </select>
+          </label>
+
+          <label>CHECK LIST:
+            <select name="check_list">
+              <option value="OK" {% if reg["CHECK LIST"] == "OK" %}selected{% endif %}>OK</option>
+              <option value="NO OK" {% if reg["CHECK LIST"] == "NO OK" %}selected{% endif %}>NO OK</option>
+            </select>
+          </label>
+
+          <label>Observaciones:
+            <textarea name="observaciones">{{ reg["Observaciones"] }}</textarea>
+          </label>
+
+          <button type="submit">Guardar cambios</button>
+        </form>
+      </div>
     </div>
   </body>
 </html>
@@ -695,7 +902,7 @@ def formulario():
         # Cargar datos existentes
         df = cargar_datos()
 
-        # Asegurarnos de comparar numéricamente
+        # Asegurarnos de comparar numéricamente para duplicados
         df_ct = pd.to_numeric(df["CT"], errors="coerce")
         df_campo = pd.to_numeric(df["Campo/Área"], errors="coerce")
         df_mesa = pd.to_numeric(df["Nº Mesa"], errors="coerce")
@@ -748,7 +955,25 @@ def formulario():
 
 @app.route("/resumen")
 def resumen():
+    if "trabajador_id" not in session:
+        return redirect(url_for("login"))
+
+    rol = session.get("rol", "trabajador")
+    trabajador_id = session.get("trabajador_id")
+
+    # Solo admin y jefe_obra pueden ver el resumen
+    if rol not in ("admin", "jefe_obra"):
+        flash("No tienes permisos para ver el resumen.", "error")
+        return redirect(url_for("formulario"))
+
     df = cargar_datos()
+
+    # Filtro por rol:
+    # - admin: ve todo
+    # - jefe_obra: de momento, ve solo sus propios registros
+    if rol == "jefe_obra":
+        df = df[df["ID trabajador"] == trabajador_id]
+
     total_registros = len(df)
 
     if total_registros == 0:
@@ -764,17 +989,123 @@ def resumen():
         )
         prod_dia = prod_dia_df.to_dict(orient="records")
 
-        registros = df.sort_values(
+        # Para permitir edición, añadimos la columna row_id (índice real en el Excel)
+        df_sorted = df.sort_values(
             ["Fecha", "Hora inicio"], ascending=[True, True]
-        ).to_dict(orient="records")
+        )
+        df_sorted = df_sorted.reset_index().rename(columns={"index": "row_id"})
+        registros = df_sorted.to_dict(orient="records")
+
+    puede_editar = rol in ("admin", "jefe_obra")
 
     return render_template_string(
         HTML_RESUMEN,
         total_registros=total_registros,
         prod_dia=prod_dia,
         registros=registros,
+        puede_editar=puede_editar,
     )
+
+
+@app.route("/editar/<int:row_id>", methods=["GET", "POST"])
+def editar_registro(row_id):
+    if "trabajador_id" not in session:
+        return redirect(url_for("login"))
+
+    rol = session.get("rol", "trabajador")
+    editor_id = session.get("trabajador_id")
+    editor_nombre = session.get("trabajador_nombre")
+
+    # Solo admin y jefe_obra pueden editar
+    if rol not in ("admin", "jefe_obra"):
+        flash("No tienes permisos para editar registros.", "error")
+        return redirect(url_for("resumen"))
+
+    df = cargar_datos()
+
+    if row_id not in df.index:
+        flash("Registro no encontrado.", "error")
+        return redirect(url_for("resumen"))
+
+    registro = df.loc[row_id]
+
+    # Si es jefe_obra, solo puede editar sus propios registros (por ahora)
+    if rol == "jefe_obra" and registro["ID trabajador"] != editor_id:
+        flash("No tienes permisos para editar este registro.", "error")
+        return redirect(url_for("resumen"))
+
+    if request.method == "POST":
+        nuevo_par = request.form.get("par_apriete")
+        nuevo_check = request.form.get("check_list")
+        nuevas_obs = request.form.get("observaciones", "")
+
+        cambios = []
+        ahora = datetime.now()
+        fecha_cambio = ahora.date()
+        hora_cambio = ahora.strftime("%H:%M")
+
+        # Comparar y registrar cambios en Par de apriete
+        valor_ant_par = registro["Par de apriete"]
+        if str(valor_ant_par) != str(nuevo_par):
+            cambios.append(
+                {
+                    "Fecha cambio": fecha_cambio,
+                    "Hora cambio": hora_cambio,
+                    "ID editor": editor_id,
+                    "Editor": editor_nombre,
+                    "Rol editor": rol,
+                    "Row ID": row_id,
+                    "CT": registro["CT"],
+                    "Campo/Área": registro["Campo/Área"],
+                    "Nº Mesa": registro["Nº Mesa"],
+                    "Campo modificado": "Par de apriete",
+                    "Valor anterior": valor_ant_par,
+                    "Valor nuevo": nuevo_par,
+                }
+            )
+            df.loc[row_id, "Par de apriete"] = nuevo_par
+
+        # Comparar y registrar cambios en CHECK LIST
+        valor_ant_check = registro["CHECK LIST"]
+        if str(valor_ant_check) != str(nuevo_check):
+            cambios.append(
+                {
+                    "Fecha cambio": fecha_cambio,
+                    "Hora cambio": hora_cambio,
+                    "ID editor": editor_id,
+                    "Editor": editor_nombre,
+                    "Rol editor": rol,
+                    "Row ID": row_id,
+                    "CT": registro["CT"],
+                    "Campo/Área": registro["Campo/Área"],
+                    "Nº Mesa": registro["Nº Mesa"],
+                    "Campo modificado": "CHECK LIST",
+                    "Valor anterior": valor_ant_check,
+                    "Valor nuevo": nuevo_check,
+                }
+            )
+            df.loc[row_id, "CHECK LIST"] = nuevo_check
+
+        # Observaciones: no lo metemos en auditoría de detalle,
+        # pero sí actualizamos el Excel
+        df.loc[row_id, "Observaciones"] = nuevas_obs
+
+        guardar_datos(df)
+
+        # Guardar auditoría si hay cambios en Par de apriete / CHECK LIST
+        if cambios:
+            guardar_auditoria(cambios)
+            flash("Cambios guardados y auditados correctamente.", "msg")
+        else:
+            flash("No se ha modificado Par de apriete ni CHECK LIST.", "msg")
+
+        return redirect(url_for("resumen"))
+
+    # GET: mostrar formulario de edición
+    reg_dict = registro.to_dict()
+    return render_template_string(HTML_EDITAR, reg=reg_dict)
 
 
 if __name__ == "__main__":
     app.run(debug=True)
+
