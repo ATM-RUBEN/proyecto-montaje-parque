@@ -23,7 +23,9 @@ MAX_MESA = 10000
 def cargar_trabajadores():
     """
     Lee el archivo TRABAJADORES PIN.xlsx y construye
-    un diccionario PIN -> {id, nombre}.
+    un diccionario PIN -> {id, nombre, rol}.
+    El rol se lee de la columna 'ROL' (admin, jefe_obra, trabajador...).
+    Si no hay rol, se asume 'trabajador'.
     """
     path = Path(TRABAJADORES_FILE)
     if not path.exists():
@@ -36,6 +38,8 @@ def cargar_trabajadores():
     df = pd.read_excel(path)
 
     mapping = {}
+    tiene_col_rol = "ROL" in df.columns
+
     for _, row in df.iterrows():
         pin_val = str(row["PIN"]).strip()
         nombre = str(row["NOMBRE"]).strip()
@@ -44,9 +48,16 @@ def cargar_trabajadores():
         except Exception:
             trabajador_id = None
 
+        rol = "trabajador"
+        if tiene_col_rol:
+            valor_rol = row.get("ROL", None)
+            if pd.notna(valor_rol):
+                rol = str(valor_rol).strip().lower()
+
         mapping[pin_val] = {
             "id": trabajador_id,
             "nombre": nombre,
+            "rol": rol,
         }
 
     print(f"✔ Cargados {len(mapping)} trabajadores desde {TRABAJADORES_FILE}")
@@ -59,7 +70,7 @@ app = Flask(__name__)
 app.secret_key = "cambia_estO_por_algo_mas_largo_y_raro"
 
 
-# ------------ DATOS PRINCIPALES (ESTADO ACTUAL) ------------
+# ------------ DATOS PRINCIPALES ------------
 def cargar_datos():
     path = Path(EXCEL_FILE)
     if not path.exists():
@@ -415,9 +426,22 @@ HTML_FORM = """
 
         <div class="header">
           <img src="{{ url_for('static', filename='logo_atm.png') }}" class="logo">
-          {% if trabajador_nombre %}
-            <span class="worker-banner">👷 {{ trabajador_nombre }}</span>
-          {% endif %}
+          <div>
+            {% if trabajador_nombre %}
+              <div class="worker-banner">👷 {{ trabajador_nombre }}</div>
+            {% endif %}
+            {% if rol %}
+              <div style="font-size:0.8rem; color:#6b7280;">
+                {% if rol == 'admin' %}
+                  👑 Administrador
+                {% elif rol == 'jefe_obra' %}
+                  📋 Jefe de obra
+                {% else %}
+                  🔧 Trabajador
+                {% endif %}
+              </div>
+            {% endif %}
+          </div>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -595,6 +619,162 @@ HTML_RESUMEN = """
         </tr>
         {% for r in registros %}
         <tr>
-          <td>{{ r["Fecha"] }}</td
+          <td>{{ r["Fecha"] }}</td>
+          <td>{{ r["Hora inicio"] }}</td>
+          <td>{{ r["Hora fin"] }}</td>
+          <td>{{ r["ID trabajador"] }}</td>
+          <td>{{ r["Trabajador"] }}</td>
+          <td>{{ r["CT"] }}</td>
+          <td>{{ r["Campo/Área"] }}</td>
+          <td>{{ r["Nº Mesa"] }}</td>
+          <td>{{ r["Par de apriete"] }}</td>
+          <td>{{ r["CHECK LIST"] }}</td>
+          <td>{{ r["Observaciones"] }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+
+    </div>
+  </body>
+</html>
+"""
 
 
+# -------------------------- RUTAS FLASK -------------------------------
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        pin = request.form.get("pin", "")
+        trabajador_info = obtener_trabajador_desde_pin(pin)
+
+        if trabajador_info is None:
+            flash("PIN incorrecto.", "error")
+            return redirect(url_for("login"))
+
+        session["trabajador_id"] = trabajador_info["id"]
+        session["trabajador_nombre"] = trabajador_info["nombre"]
+        session["rol"] = trabajador_info.get("rol", "trabajador")
+
+        return redirect(url_for("formulario"))
+
+    return render_template_string(HTML_LOGIN)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/", methods=["GET", "POST"])
+def formulario():
+    if "trabajador_id" not in session:
+        return redirect(url_for("login"))
+
+    trabajador_id = session["trabajador_id"]
+    trabajador_nombre = session["trabajador_nombre"]
+    rol = session.get("rol", "trabajador")
+
+    if request.method == "POST":
+        hora_inicio = request.form.get("hora_inicio", "")
+        hora_fin = request.form.get("hora_fin", "")
+        ct = int(request.form.get("ct"))
+        campo = int(request.form.get("campo"))
+        mesa = int(request.form.get("mesa"))
+        par_apriete = request.form.get("par_apriete")
+        check_list = request.form.get("check_list")
+        observaciones = request.form.get("observaciones")
+
+        # Completar horas si vienen vacías
+        if not hora_fin:
+            hora_fin = datetime.now().strftime("%H:%M")
+        if not hora_inicio:
+            hora_inicio = hora_fin
+
+        # Cargar datos existentes
+        df = cargar_datos()
+
+        # Asegurarnos de comparar numéricamente
+        df_ct = pd.to_numeric(df["CT"], errors="coerce")
+        df_campo = pd.to_numeric(df["Campo/Área"], errors="coerce")
+        df_mesa = pd.to_numeric(df["Nº Mesa"], errors="coerce")
+
+        mismos = df[
+            (df_ct == ct) &
+            (df_campo == campo) &
+            (df_mesa == mesa)
+        ]
+
+        if not mismos.empty:
+            flash(
+                "Esta estructura ya ha sido registrada anteriormente. "
+                "Por favor, contacta con tu supervisor para aclarar esta situación.",
+                "error",
+            )
+            return redirect(url_for("formulario"))
+
+        # Si no existe, creamos un registro nuevo
+        nuevo = {
+            "ID trabajador": trabajador_id,
+            "Trabajador": trabajador_nombre,
+            "Fecha": date.today(),
+            "Hora inicio": hora_inicio,
+            "Hora fin": hora_fin,
+            "CT": ct,
+            "Campo/Área": campo,
+            "Nº Mesa": mesa,
+            "Par de apriete": par_apriete,
+            "CHECK LIST": check_list,
+            "Observaciones": observaciones,
+        }
+
+        df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
+        guardar_datos(df)
+
+        flash("Registro guardado.", "msg")
+        return redirect(url_for("formulario"))
+
+    # GET: mostrar formulario
+    return render_template_string(
+        HTML_FORM,
+        trabajador_nombre=trabajador_nombre,
+        rol=rol,
+        cts=list(range(1, MAX_CT + 1)),
+        campos=list(range(1, MAX_CAMPO + 1)),
+        mesas=list(range(1, MAX_MESA + 1)),
+    )
+
+
+@app.route("/resumen")
+def resumen():
+    df = cargar_datos()
+    total_registros = len(df)
+
+    if total_registros == 0:
+        prod_dia = []
+        registros = []
+    else:
+        df["Fecha"] = df["Fecha"].astype(str)
+        prod_dia_df = (
+            df.groupby("Fecha")
+            .size()
+            .reset_index(name="Registros")
+            .sort_values("Fecha", ascending=True)
+        )
+        prod_dia = prod_dia_df.to_dict(orient="records")
+
+        registros = df.sort_values(
+            ["Fecha", "Hora inicio"], ascending=[True, True]
+        ).to_dict(orient="records")
+
+    return render_template_string(
+        HTML_RESUMEN,
+        total_registros=total_registros,
+        prod_dia=prod_dia,
+        registros=registros,
+    )
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
