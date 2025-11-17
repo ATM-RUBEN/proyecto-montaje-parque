@@ -11,73 +11,178 @@ from datetime import date, datetime
 from pathlib import Path
 import pandas as pd
 
-# -------- CONFIGURACIÓN --------
-EXCEL_FILE = "registro_montaje.xlsx"
-TRABAJADORES_FILE = "TRABAJADORES PIN.xlsx"
-AUDIT_FILE = "auditoria_cambios.xlsx"
+# --- GOOGLE SHEETS ---
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
-MAX_CT = 100
-MAX_CAMPO = 10000
-MAX_MESA = 10000
+# ---------------------------------------------------------
+# CONFIGURACIÓN GENERAL
+# ---------------------------------------------------------
+
+EXCEL_REGISTROS = "registro_montaje.xlsx"
+EXCEL_TRABAJADORES = "TRABAJADORES PIN.xlsx"
+EXCEL_AUDITORIA_LOCAL = "auditoria_cambios.xlsx"
+
+# Google Sheets (auditoría)
+GOOGLE_SHEETS_ID = "1r2KIJK5OrT8WMy4djtjUlMHBVF7qjlZ2hv_7zXpnnns"
+GOOGLE_CREDENTIALS_FILE = "credentials.json"
+GOOGLE_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
-def cargar_trabajadores():
+app = Flask(__name__)
+app.secret_key = "cambia_esto_por_algo_largo_y_raro_123"
+
+
+# ---------------------------------------------------------
+# UTILIDADES DE TRABAJADORES Y ROLES
+# ---------------------------------------------------------
+
+
+def cargar_trabajadores_desde_excel():
     """
-    Lee el archivo TRABAJADORES PIN.xlsx y construye
-    un diccionario PIN -> {id, nombre, rol}.
-    El rol se lee de la columna 'ROL' (admin, jefe_obra, trabajador...).
-    Si no hay rol, se asume 'trabajador'.
+    Lee TRABAJADORES PIN.xlsx y devuelve un diccionario:
+    { PIN(str): {"id": int, "nombre": str, "rol": str} }
+    Asumimos:
+      Col B -> nombre
+      Col C -> id
+      Col D -> PIN
+      Col E -> rol (admin / jefe_obra / trabajador)
     """
-    path = Path(TRABAJADORES_FILE)
+    path = Path(EXCEL_TRABAJADORES)
     if not path.exists():
-        print(
-            f"⚠ AVISO: No se encontró el archivo {TRABAJADORES_FILE}. "
-            "Todos los PIN serán inválidos hasta que exista."
-        )
+        print(f"⚠ No se encuentra {EXCEL_TRABAJADORES}")
         return {}
 
     df = pd.read_excel(path)
-
-    mapping = {}
-    tiene_col_rol = "ROL" in df.columns
+    trabajadores = {}
 
     for _, row in df.iterrows():
-        pin_val = str(row["PIN"]).strip()
-        nombre = str(row["NOMBRE"]).strip()
         try:
-            trabajador_id = int(row["ID"])
-        except Exception:
-            trabajador_id = None
+            nombre = str(row.iloc[1]).strip()
+            id_trab = row.iloc[2]
+            pin_raw = row.iloc[3]
+            rol = str(row.iloc[4]).strip().lower()
 
-        rol = "trabajador"
-        if tiene_col_rol:
-            valor_rol = row.get("ROL", None)
-            if pd.notna(valor_rol):
-                rol = str(valor_rol).strip().lower()
+            if pd.isna(pin_raw):
+                continue
 
-        mapping[pin_val] = {
-            "id": trabajador_id,
-            "nombre": nombre,
-            "rol": rol,
-        }
+            pin = str(pin_raw).strip()
+            # Por si viene como 1029.0
+            if "." in pin:
+                pin = pin.split(".")[0]
 
-    print(f"✔ Cargados {len(mapping)} trabajadores desde {TRABAJADORES_FILE}")
-    return mapping
+            trabajadores[pin] = {
+                "id": int(id_trab),
+                "nombre": nombre,
+                "rol": rol,
+            }
+        except Exception as e:
+            print("Error leyendo fila de trabajadores:", e)
+            continue
 
-
-TRABAJADORES = cargar_trabajadores()
-
-app = Flask(__name__)
-app.secret_key = "cambia_estO_por_algo_mas_largo_y_raro"
+    return trabajadores
 
 
-# ------------ DATOS PRINCIPALES ------------
-def cargar_datos():
-    path = Path(EXCEL_FILE)
-    if not path.exists():
+def obtener_usuario_por_pin(pin_introducido: str):
+    pin_introducido = pin_introducido.strip()
+    trabajadores = cargar_trabajadores_desde_excel()
+    return trabajadores.get(pin_introducido)
+
+
+def rol_legible(rol_interno: str) -> str:
+    rol_interno = (rol_interno or "").lower()
+    if rol_interno == "admin":
+        return "Administrador"
+    if rol_interno == "jefe_obra":
+        return "Jefe de obra"
+    return "Trabajador"
+
+
+# ---------------------------------------------------------
+# UTILIDADES DE GOOGLE SHEETS (AUDITORÍA)
+# ---------------------------------------------------------
+
+
+def obtener_servicio_sheets():
+    """
+    Devuelve el cliente de Google Sheets usando credentials.json
+    """
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            GOOGLE_CREDENTIALS_FILE, scopes=GOOGLE_SCOPES
+        )
+        service = build("sheets", "v4", credentials=creds)
+        return service
+    except Exception as e:
+        print("⚠ Error creando servicio de Google Sheets:", e)
+        return None
+
+
+def registrar_auditoria_google_sheets(
+    fecha,
+    hora,
+    usuario,
+    rol,
+    accion,
+    ct,
+    campo,
+    mesa,
+    campo_modificado,
+    valor_anterior,
+    valor_nuevo,
+):
+    """
+    Añade una fila a la hoja de Google Sheets con la auditoría.
+    Asumimos que se escribe en la Hoja1, desde A1 hacia abajo.
+    """
+    service = obtener_servicio_sheets()
+    if service is None:
+        return
+
+    valores = [
+        [
+            fecha,
+            hora,
+            usuario,
+            rol,
+            accion,
+            ct,
+            campo,
+            mesa,
+            campo_modificado,
+            valor_anterior,
+            valor_nuevo,
+        ]
+    ]
+
+    body = {"values": valores}
+
+    try:
+        service.spreadsheets().values().append(
+            spreadsheetId=GOOGLE_SHEETS_ID,
+            range="Hoja1!A1",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body=body,
+        ).execute()
+    except Exception as e:
+        print("⚠ Error escribiendo en Google Sheets:", e)
+
+
+# ---------------------------------------------------------
+# UTILIDADES DE EXCEL LOCAL
+# ---------------------------------------------------------
+
+
+def cargar_registros():
+    path = Path(EXCEL_REGISTROS)
+    if path.exists():
+        return pd.read_excel(path)
+    else:
         columnas = [
-            "ID trabajador",
-            "Trabajador",
+            "Trabajador_ID",
+            "Trabajador_Nombre",
+            "Trabajador_Rol",
             "Fecha",
             "Hora inicio",
             "Hora fin",
@@ -90,830 +195,722 @@ def cargar_datos():
         ]
         return pd.DataFrame(columns=columnas)
 
-    df = pd.read_excel(path)
 
-    # Compatibilidad antigua: renombrar PPI a CHECK LIST si hace falta
-    if "PPI" in df.columns and "CHECK LIST" not in df.columns:
-        df = df.rename(columns={"PPI": "CHECK LIST"})
-
-    columnas_objetivo = [
-        "ID trabajador",
-        "Trabajador",
-        "Fecha",
-        "Hora inicio",
-        "Hora fin",
-        "CT",
-        "Campo/Área",
-        "Nº Mesa",
-        "Par de apriete",
-        "CHECK LIST",
-        "Observaciones",
-    ]
-
-    for col in columnas_objetivo:
-        if col not in df.columns:
-            df[col] = ""
-
-    return df[columnas_objetivo]
+def guardar_registros(df: pd.DataFrame):
+    df.to_excel(EXCEL_REGISTROS, index=False)
 
 
-def guardar_datos(df):
-    df.to_excel(EXCEL_FILE, index=False)
+def registrar_auditoria_local(
+    fecha,
+    hora,
+    usuario,
+    rol,
+    accion,
+    ct,
+    campo,
+    mesa,
+    campo_modificado,
+    valor_anterior,
+    valor_nuevo,
+):
+    path = Path(EXCEL_AUDITORIA_LOCAL)
+    nuevo = {
+        "Fecha": fecha,
+        "Hora": hora,
+        "Usuario": usuario,
+        "Rol": rol,
+        "Acción": accion,
+        "CT": ct,
+        "Campo/Área": campo,
+        "Nº Mesa": mesa,
+        "Campo modificado": campo_modificado,
+        "Valor anterior": valor_anterior,
+        "Valor nuevo": valor_nuevo,
+    }
 
-
-def guardar_auditoria(lista_cambios):
-    """
-    Guarda en AUDIT_FILE la lista de cambios realizados.
-    Cada elemento de lista_cambios es un diccionario con:
-    - Fecha cambio
-    - Hora cambio
-    - ID editor
-    - Editor
-    - Rol editor
-    - Row ID
-    - CT
-    - Campo/Área
-    - Nº Mesa
-    - Campo modificado
-    - Valor anterior
-    - Valor nuevo
-    """
-    path = Path(AUDIT_FILE)
     if path.exists():
-        df_a = pd.read_excel(path)
+        df = pd.read_excel(path)
+        df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
     else:
-        df_a = pd.DataFrame(
-            columns=[
-                "Fecha cambio",
-                "Hora cambio",
-                "ID editor",
-                "Editor",
-                "Rol editor",
-                "Row ID",
-                "CT",
-                "Campo/Área",
-                "Nº Mesa",
-                "Campo modificado",
-                "Valor anterior",
-                "Valor nuevo",
-            ]
-        )
+        df = pd.DataFrame([nuevo])
 
-    df_nuevos = pd.DataFrame(lista_cambios)
-    df_final = pd.concat([df_a, df_nuevos], ignore_index=True)
-    df_final.to_excel(AUDIT_FILE, index=False)
+    df.to_excel(path, index=False)
 
 
-def obtener_trabajador_desde_pin(pin_introducido: str):
-    pin_introducido = pin_introducido.strip()
-    return TRABAJADORES.get(pin_introducido)
+def registrar_auditoria(
+    usuario,
+    rol,
+    accion,
+    ct,
+    campo,
+    mesa,
+    campo_modificado,
+    valor_anterior,
+    valor_nuevo,
+):
+    """
+    Registra la auditoría tanto en Excel local como en Google Sheets.
+    """
+    ahora = datetime.now()
+    fecha = ahora.date().isoformat()
+    hora = ahora.strftime("%H:%M:%S")
+
+    # Excel local
+    registrar_auditoria_local(
+        fecha,
+        hora,
+        usuario,
+        rol,
+        accion,
+        ct,
+        campo,
+        mesa,
+        campo_modificado,
+        valor_anterior,
+        valor_nuevo,
+    )
+
+    # Google Sheets
+    registrar_auditoria_google_sheets(
+        fecha,
+        hora,
+        usuario,
+        rol,
+        accion,
+        ct,
+        campo,
+        mesa,
+        campo_modificado,
+        valor_anterior,
+        valor_nuevo,
+    )
 
 
-# ----------- LOGIN ------------
-HTML_LOGIN = """
+# ---------------------------------------------------------
+# PLANTILLAS HTML
+# ---------------------------------------------------------
+
+LOGIN_HTML = """
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acceso trabajador - ATM España</title>
-    <style>
-      :root {
-        --atm-red: #e30613;
-        --atm-red-dark: #c40010;
-        --atm-gray-bg: #f9fafb;
-        --atm-border: #e5e7eb;
-      }
-      * { box-sizing: border-box; }
-      body {
-        font-family: Arial, sans-serif;
-        margin: 0;
-        padding: 0;
-        background: var(--atm-gray-bg);
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .container {
-        width: 100%;
-        max-width: 420px;
-        padding: 16px;
-      }
-      .card {
-        background: #ffffff;
-        border-radius: 20px;
-        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
-        padding: 22px 18px 26px 18px;
-        border: 1px solid var(--atm-border);
-      }
-      .header {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 14px;
-      }
-      .logo {
-        height: 60px;
-        width: auto;
-      }
-      .title {
-        font-size: 1.2rem;
-        font-weight: bold;
-        color: var(--atm-red);
-        text-align: center;
-      }
-      .subtitle {
-        font-size: 0.95rem;
-        text-align: center;
-        color: #4b5563;
-      }
-      form {
-        margin-top: 18px;
-      }
-      label {
-        display: block;
-        font-size: 1.0rem;
-        color: #111827;
-        margin-bottom: 6px;
-        text-align: center;
-      }
-      input[type="password"] {
-        width: 100%;
-        padding: 16px;
-        font-size: 1.3rem;
-        text-align: center;
-        letter-spacing: 0.25em;
-        border-radius: 14px;
-        border: 1px solid var(--atm-border);
-      }
-      input[type="password"]:focus {
-        outline: 2px solid var(--atm-red);
-        border-color: var(--atm-red);
-      }
-      button {
-        margin-top: 22px;
-        width: 100%;
-        padding: 16px;
-        font-size: 1.2rem;
-        background: var(--atm-red);
-        color: white;
-        border: none;
-        border-radius: 999px;
-        font-weight: bold;
-      }
-      button:active {
-        transform: scale(0.98);
-        background: var(--atm-red-dark);
-      }
-      .msg {
-        margin-top: 12px;
-        color: #16a34a;
-        font-size: 0.95rem;
-        text-align: center;
-      }
-      .error {
-        margin-top: 12px;
-        color: #dc2626;
-        font-size: 0.95rem;
-        text-align: center;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="card">
-        <div class="header">
-          <img src="{{ url_for('static', filename='logo_atm.png') }}" alt="ATM España" class="logo">
-          <div class="title">ATM España</div>
-          <div class="subtitle">Identifícate con tu PIN para registrar trabajos</div>
-        </div>
+<head>
+  <meta charset="utf-8">
+  <title>Acceso · Registro de montaje</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: white;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      width: 360px;
+      text-align: center;
+    }
+    .logo {
+      height: 60px;
+      margin-bottom: 15px;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      font-size: 18px;
+      margin-top: 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      text-align: center;
+      letter-spacing: 4px;
+    }
+    button {
+      margin-top: 15px;
+      width: 100%;
+      padding: 10px;
+      font-size: 18px;
+      border-radius: 6px;
+      border: none;
+      background: #e30613;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #c10510;
+    }
+    .msg { margin-top: 10px; color: green; }
+    .error { margin-top: 10px; color: red; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="{{ url_for('static', filename='ATM_v_pos_rgb_definitivo.jpg') }}" class="logo" alt="ATM España">
+    <h3>Introduce tu PIN</h3>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="{{ category }}">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
-        <form method="post">
-          <label>PIN trabajador</label>
-          <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*" required>
-          <button type="submit">Entrar</button>
-        </form>
-      </div>
-    </div>
-  </body>
+    <form method="post">
+      <input type="password" name="pin" autocomplete="off" required>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
 </html>
 """
 
 
-# ----------- FORMULARIO PRINCIPAL ------------
-HTML_FORM = """
+FORM_HTML = """
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registro de montaje - ATM España</title>
-    <style>
-      :root {
-        --atm-red: #e30613;
-        --atm-red-dark: #c40010;
-        --atm-gray-bg: #f9fafb;
-        --atm-border: #e5e7eb;
-      }
-
-      * { box-sizing: border-box; }
-
-      body {
-        font-family: Arial, sans-serif;
-        margin: 0;
-        padding: 0;
-        background: var(--atm-gray-bg);
-      }
-
-      .container {
-        max-width: 480px;
-        margin: 0 auto;
-        padding: 16px;
-      }
-
-      .top-nav {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-        font-size: 0.9rem;
-      }
-
-      .link-resumen, .link-logout {
-        color: var(--atm-red);
-        text-decoration: none;
-        font-weight: bold;
-      }
-
-      .card {
-        background: #ffffff;
-        border-radius: 16px;
-        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-        padding: 18px 16px 22px 16px;
-        border: 1px solid var(--atm-border);
-      }
-
-      .header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 8px;
-      }
-
-      .logo {
-        height: 40px;
-        width: auto;
-      }
-
-      .worker-banner {
-        font-size: 1.05rem;
-        font-weight: bold;
-        color: #111827;
-      }
-
-      label {
-        display: block;
-        margin-top: 14px;
-        font-size: 1.02rem;
-        color: #111827;
-      }
-
-      input, select, textarea {
-        width: 100%;
-        padding: 12px;
-        margin-top: 6px;
-        font-size: 1.0rem;
-        border-radius: 10px;
-        border: 1px solid var(--atm-border);
-      }
-
-      input:focus, select:focus, textarea:focus {
-        outline: 2px solid var(--atm-red);
-        border-color: var(--atm-red);
-      }
-
-      textarea {
-        resize: vertical;
-        min-height: 80px;
-      }
-
-      button {
-        padding: 12px;
-        font-size: 1.1rem;
-        background: var(--atm-red);
-        color: white;
-        border: none;
-        border-radius: 999px;
-        font-weight: bold;
-        width: 100%;
-        margin-top: 20px;
-      }
-
-      .time-row {
-        display: flex;
-        gap: 8px;
-      }
-
-      .time-row button {
-        width: auto;
-        padding-inline: 10px;
-        font-size: 0.9rem;
-        border-radius: 999px;
-      }
-
-      .msg {
-        margin-top: 10px;
-        color: #16a34a;
-        font-size: 0.9rem;
-      }
-
-      .error {
-        margin-top: 10px;
-        color: #dc2626;
-        font-size: 0.9rem;
-      }
-    </style>
-
-    <script>
-      function horaActual() {
-        const d = new Date();
-        return String(d.getHours()).padStart(2, '0') + ":" + String(d.getMinutes()).padStart(2, '0');
-      }
-      function marcarInicio() {
-        document.getElementById('hora_inicio').value = horaActual();
-      }
-      function marcarFin() {
-        document.getElementById('hora_fin').value = horaActual();
-      }
-    </script>
-
-  </head>
-  <body>
-    <div class="container">
-
-      <div class="top-nav">
-        <a href="{{ url_for('resumen') }}" class="link-resumen">📊 Resumen</a>
-        <a href="{{ url_for('logout') }}" class="link-logout">⏻ Salir</a>
-      </div>
-
-      <div class="card">
-
-        <div class="header">
-          <img src="{{ url_for('static', filename='logo_atm.png') }}" class="logo">
-          <div>
-            {% if trabajador_nombre %}
-              <div class="worker-banner">👷 {{ trabajador_nombre }}</div>
-            {% endif %}
-            {% if rol %}
-              <div style="font-size:0.8rem; color:#6b7280;">
-                {% if rol == 'admin' %}
-                  👑 Administrador
-                {% elif rol == 'jefe_obra' %}
-                  📋 Jefe de obra
-                {% else %}
-                  🔧 Trabajador
-                {% endif %}
-              </div>
-            {% endif %}
-          </div>
-        </div>
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="{{ category }}">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
-
-        <form method="post" id="form-registro">
-
-          <label>Hora inicio:
-            <div class="time-row">
-              <input type="text" name="hora_inicio" id="hora_inicio" readonly>
-              <button type="button" onclick="marcarInicio()">Marcar inicio</button>
-            </div>
-          </label>
-
-          <label>Hora fin:
-            <div class="time-row">
-              <input type="text" name="hora_fin" id="hora_fin" readonly>
-              <button type="button" onclick="marcarFin()">Marcar fin</button>
-            </div>
-          </label>
-
-          <label>CT:
-            <select name="ct">
-              {% for i in cts %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
-            </select>
-          </label>
-
-          <label>Campo / Área:
-            <select name="campo">
-              {% for i in campos %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
-            </select>
-          </label>
-
-          <label>Nº Mesa:
-            <select name="mesa">
-              {% for i in mesas %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
-            </select>
-          </label>
-
-          <label>Par de apriete:
-            <select name="par_apriete">
-              <option value="OK">OK</option>
-              <option value="NO OK">NO OK</option>
-            </select>
-          </label>
-
-          <label>CHECK LIST:
-            <select name="check_list">
-              <option value="OK">OK</option>
-              <option value="NO OK">NO OK</option>
-            </select>
-          </label>
-
-          <label>Observaciones:
-            <textarea name="observaciones"></textarea>
-          </label>
-
-          <button type="submit">Guardar registro</button>
-        </form>
-      </div>
-
+<head>
+  <meta charset="utf-8">
+  <title>Registro de montaje · Parque solar</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 15px;
+    }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .top-links a {
+      text-decoration: none;
+      margin-right: 15px;
+      color: #444;
+      font-size: 14px;
+    }
+    .top-links a:hover {
+      text-decoration: underline;
+    }
+    .card {
+      max-width: 520px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 14px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .logo {
+      height: 45px;
+      margin-right: 10px;
+    }
+    .user-info {
+      display: flex;
+      flex-direction: column;
+    }
+    .user-name {
+      font-weight: bold;
+      font-size: 16px;
+    }
+    .user-role {
+      font-size: 13px;
+      color: #777;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      margin-top: 4px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+    .time-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .time-row input {
+      flex: 1;
+    }
+    .small-btn {
+      background: #e30613;
+      color: white;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      min-width: 90px;
+    }
+    .small-btn:hover {
+      background: #c10510;
+    }
+    .btn-main {
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      font-size: 18px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .btn-main:hover {
+      background: #0069d9;
+    }
+    .msg { margin-top: 10px; color: green; }
+    .error { margin-top: 10px; color: red; }
+  </style>
+  <script>
+    function marcarHora(campoId) {
+      const ahora = new Date();
+      const h = String(ahora.getHours()).padStart(2, '0');
+      const m = String(ahora.getMinutes()).padStart(2, '0');
+      const s = String(ahora.getSeconds()).padStart(2, '0');
+      document.getElementById(campoId).value = h + ":" + m + ":" + s;
+    }
+  </script>
+</head>
+<body>
+  <div class="top-bar">
+    <div class="top-links">
+      {% if rol in ['admin', 'jefe_obra'] %}
+        <a href="{{ url_for('resumen') }}">📊 Resumen</a>
+      {% endif %}
     </div>
-  </body>
+    <div class="top-links">
+      <a href="{{ url_for('logout') }}">🔴 Salir</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="header">
+      <img src="{{ url_for('static', filename='ATM_v_pos_rgb_definitivo.jpg') }}" class="logo" alt="ATM España">
+      <div class="user-info">
+        <div class="user-name">{{ nombre }}</div>
+        <div class="user-role">{{ rol_mostrar }}</div>
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post">
+      <label>Hora inicio:</label>
+      <div class="time-row">
+        <input type="text" id="hora_inicio" name="hora_inicio" value="">
+        <button type="button" class="small-btn" onclick="marcarHora('hora_inicio')">Marcar<br>inicio</button>
+      </div>
+
+      <label>Hora fin:</label>
+      <div class="time-row">
+        <input type="text" id="hora_fin" name="hora_fin" value="">
+        <button type="button" class="small-btn" onclick="marcarHora('hora_fin')">Marcar<br>fin</button>
+      </div>
+
+      <label>CT:</label>
+      <select name="ct">
+        {% for i in range(1, 101) %}
+          <option value="{{ i }}">{{ i }}</option>
+        {% endfor %}
+      </select>
+
+      <label>Campo / Área:</label>
+      <select name="campo">
+        {% for i in range(1, 10001) %}
+          <option value="{{ i }}">{{ i }}</option>
+        {% endfor %}
+      </select>
+
+      <label>Nº Mesa:</label>
+      <select name="mesa">
+        {% for i in range(1, 10001) %}
+          <option value="{{ i }}">{{ i }}</option>
+        {% endfor %}
+      </select>
+
+      <label>Par de apriete:</label>
+      <select name="par_apriete">
+        <option value="OK">OK</option>
+        <option value="NO OK">NO OK</option>
+      </select>
+
+      <label>CHECK LIST:</label>
+      <select name="check_list">
+        <option value="OK">OK</option>
+        <option value="NO OK">NO OK</option>
+      </select>
+
+      <label>Observaciones:</label>
+      <textarea name="observaciones"></textarea>
+
+      <button type="submit" class="btn-main">Guardar registro</button>
+    </form>
+  </div>
+</body>
 </html>
 """
 
 
-# ----------- RESUMEN ------------
-HTML_RESUMEN = """
+RESUMEN_HTML = """
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resumen de montaje - ATM España</title>
-    <style>
-      :root {
-        --atm-red: #e30613;
-        --atm-gray-bg: #f9fafb;
-        --atm-border: #e5e7eb;
-      }
+<head>
+  <meta charset="utf-8">
+  <title>Resumen · Registro de montaje</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 15px;
+    }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .top-links a {
+      text-decoration: none;
+      margin-right: 15px;
+      color: #444;
+      font-size: 14px;
+    }
+    .top-links a:hover {
+      text-decoration: underline;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 6px 8px;
+      font-size: 12px;
+      text-align: center;
+    }
+    th {
+      background: #eee;
+    }
+    .btn-edit {
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn-edit:hover {
+      background: #0069d9;
+    }
+    .msg { margin-top: 10px; color: green; }
+    .error { margin-top: 10px; color: red; }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div class="top-links">
+      <a href="{{ url_for('formulario') }}">⬅ Volver al formulario</a>
+    </div>
+    <div class="top-links">
+      <a href="{{ url_for('logout') }}">🔴 Salir</a>
+    </div>
+  </div>
 
-      body {
-        font-family: Arial;
-        background: var(--atm-gray-bg);
-        margin: 0;
-        padding: 0;
-      }
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
-      .container {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 16px;
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.85rem;
-        margin-top: 15px;
-      }
-
-      th, td {
-        border: 1px solid var(--atm-border);
-        padding: 6px;
-        text-align: center;
-      }
-
-      th {
-        background: #f3f4f6;
-      }
-
-      .top-nav {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 10px;
-      }
-
-      .link {
-        color: var(--atm-red);
-        text-decoration: none;
-        font-weight: bold;
-      }
-
-      h2, h3 {
-        margin-top: 10px;
-      }
-
-      .btn-editar {
-        color: var(--atm-red);
-        text-decoration: none;
-        font-weight: bold;
-      }
-    </style>
-  </head>
-
-  <body>
-    <div class="container">
-
-      <div class="top-nav">
-        <a href="{{ url_for('formulario') }}" class="link">⬅ Volver</a>
-        <img src="{{ url_for('static', filename='logo_atm.png') }}" height="35">
-      </div>
-
-      <h2>Resumen total del proyecto</h2>
-      <p>Total de registros visibles: <strong>{{ total_registros }}</strong></p>
-
-      <h3>Producción por día (todos los días visibles)</h3>
-      <table>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Trabajador</th>
+        <th>Rol</th>
+        <th>Fecha</th>
+        <th>Hora inicio</th>
+        <th>Hora fin</th>
+        <th>CT</th>
+        <th>Campo</th>
+        <th>Mesa</th>
+        <th>Par apriete</th>
+        <th>CHECK LIST</th>
+        <th>Obs.</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i, fila in registros %}
         <tr>
-          <th>Fecha</th>
-          <th>Registros</th>
-        </tr>
-        {% for fila in prod_dia %}
-        <tr>
+          <td>{{ i }}</td>
+          <td>{{ fila["Trabajador_Nombre"] }}</td>
+          <td>{{ fila["Trabajador_Rol"] }}</td>
           <td>{{ fila["Fecha"] }}</td>
-          <td>{{ fila["Registros"] }}</td>
+          <td>{{ fila["Hora inicio"] }}</td>
+          <td>{{ fila["Hora fin"] }}</td>
+          <td>{{ fila["CT"] }}</td>
+          <td>{{ fila["Campo/Área"] }}</td>
+          <td>{{ fila["Nº Mesa"] }}</td>
+          <td>{{ fila["Par de apriete"] }}</td>
+          <td>{{ fila["CHECK LIST"] }}</td>
+          <td>{{ fila["Observaciones"] }}</td>
+          <td>
+            <a class="btn-edit" href="{{ url_for('editar_registro', indice=i) }}">Editar</a>
+          </td>
         </tr>
-        {% endfor %}
-      </table>
-
-      <h3>Registros detallados</h3>
-      <table>
-        <tr>
-          <th>Fecha</th>
-          <th>Inicio</th>
-          <th>Fin</th>
-          <th>ID</th>
-          <th>Trabajador</th>
-          <th>CT</th>
-          <th>Campo</th>
-          <th>Mesa</th>
-          <th>Par apriete</th>
-          <th>CHECK LIST</th>
-          <th>Observaciones</th>
-          {% if puede_editar %}
-            <th>Acciones</th>
-          {% endif %}
-        </tr>
-        {% for r in registros %}
-        <tr>
-          <td>{{ r["Fecha"] }}</td>
-          <td>{{ r["Hora inicio"] }}</td>
-          <td>{{ r["Hora fin"] }}</td>
-          <td>{{ r["ID trabajador"] }}</td>
-          <td>{{ r["Trabajador"] }}</td>
-          <td>{{ r["CT"] }}</td>
-          <td>{{ r["Campo/Área"] }}</td>
-          <td>{{ r["Nº Mesa"] }}</td>
-          <td>{{ r["Par de apriete"] }}</td>
-          <td>{{ r["CHECK LIST"] }}</td>
-          <td>{{ r["Observaciones"] }}</td>
-          {% if puede_editar %}
-            <td>
-              <a href="{{ url_for('editar_registro', row_id=r['row_id']) }}" class="btn-editar">
-                ✏️ Editar
-              </a>
-            </td>
-          {% endif %}
-        </tr>
-        {% endfor %}
-      </table>
-
-    </div>
-  </body>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
 </html>
 """
 
 
-# ----------- PANTALLA EDICIÓN ------------
-HTML_EDITAR = """
+EDITAR_HTML = """
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editar registro - ATM España</title>
-    <style>
-      :root {
-        --atm-red: #e30613;
-        --atm-gray-bg: #f9fafb;
-        --atm-border: #e5e7eb;
-      }
-      body {
-        font-family: Arial, sans-serif;
-        background: var(--atm-gray-bg);
-        margin: 0;
-        padding: 0;
-      }
-      .container {
-        max-width: 480px;
-        margin: 0 auto;
-        padding: 16px;
-      }
-      .card {
-        background: #ffffff;
-        border-radius: 16px;
-        padding: 18px 16px 22px 16px;
-        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-        border: 1px solid var(--atm-border);
-      }
-      h2 {
-        margin-top: 0;
-        margin-bottom: 10px;
-      }
-      label {
-        display: block;
-        margin-top: 12px;
-        font-size: 0.95rem;
-        color: #111827;
-      }
-      input, select, textarea {
-        width: 100%;
-        padding: 10px;
-        margin-top: 4px;
-        font-size: 0.95rem;
-        border-radius: 8px;
-        border: 1px solid var(--atm-border);
-      }
-      input[readonly] {
-        background: #f3f4f6;
-      }
-      textarea {
-        resize: vertical;
-        min-height: 70px;
-      }
-      button {
-        margin-top: 18px;
-        width: 100%;
-        padding: 12px;
-        font-size: 1rem;
-        background: var(--atm-red);
-        color: white;
-        border: none;
-        border-radius: 999px;
-        font-weight: bold;
-      }
-      .top-nav {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 10px;
-      }
-      .link {
-        color: var(--atm-red);
-        text-decoration: none;
-        font-weight: bold;
-      }
-      .info {
-        font-size: 0.85rem;
-        color: #6b7280;
-        margin-top: 6px;
-      }
-      .error {
-        margin-top: 10px;
-        color: #dc2626;
-        font-size: 0.9rem;
-      }
-      .msg {
-        margin-top: 10px;
-        color: #16a34a;
-        font-size: 0.9rem;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
+<head>
+  <meta charset="utf-8">
+  <title>Editar registro</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 15px;
+    }
+    .card {
+      max-width: 500px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 14px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      margin-top: 4px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+    input[readonly] {
+      background: #eee;
+    }
+    button {
+      margin-top: 20px;
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      border-radius: 999px;
+      border: none;
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0069d9;
+    }
+    .top-links {
+      margin-bottom: 10px;
+    }
+    .top-links a {
+      text-decoration: none;
+      color: #444;
+      font-size: 14px;
+    }
+    .top-links a:hover { text-decoration: underline; }
+    .msg { margin-top: 10px; color: green; }
+    .error { margin-top: 10px; color: red; }
+  </style>
+</head>
+<body>
+  <div class="top-links">
+    <a href="{{ url_for('resumen') }}">⬅ Volver al resumen</a>
+  </div>
 
-      <div class="top-nav">
-        <a href="{{ url_for('resumen') }}" class="link">⬅ Volver al resumen</a>
-        <img src="{{ url_for('static', filename='logo_atm.png') }}" height="30">
-      </div>
+  <div class="card">
+    <h3>Editar registro #{{ indice }}</h3>
 
-      <div class="card">
-        <h2>Editar registro</h2>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="{{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
-        <div class="info">
-          CT {{ reg["CT"] }} · Campo {{ reg["Campo/Área"] }} · Mesa {{ reg["Nº Mesa"] }}<br>
-          Fecha: {{ reg["Fecha"] }} · Trabajador: {{ reg["Trabajador"] }}
-        </div>
+    <form method="post">
+      <label>Trabajador:</label>
+      <input type="text" value="{{ fila['Trabajador_Nombre'] }}" readonly>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="{{ category }}">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
+      <label>Fecha:</label>
+      <input type="text" value="{{ fila['Fecha'] }}" readonly>
 
-        <form method="post">
-          <label>Par de apriete:
-            <select name="par_apriete">
-              <option value="OK" {% if reg["Par de apriete"] == "OK" %}selected{% endif %}>OK</option>
-              <option value="NO OK" {% if reg["Par de apriete"] == "NO OK" %}selected{% endif %}>NO OK</option>
-            </select>
-          </label>
+      <label>CT:</label>
+      <input type="text" value="{{ fila['CT'] }}" readonly>
 
-          <label>CHECK LIST:
-            <select name="check_list">
-              <option value="OK" {% if reg["CHECK LIST"] == "OK" %}selected{% endif %}>OK</option>
-              <option value="NO OK" {% if reg["CHECK LIST"] == "NO OK" %}selected{% endif %}>NO OK</option>
-            </select>
-          </label>
+      <label>Campo / Área:</label>
+      <input type="text" value="{{ fila['Campo/Área'] }}" readonly>
 
-          <label>Observaciones:
-            <textarea name="observaciones">{{ reg["Observaciones"] }}</textarea>
-          </label>
+      <label>Nº Mesa:</label>
+      <input type="text" value="{{ fila['Nº Mesa'] }}" readonly>
 
-          <button type="submit">Guardar cambios</button>
-        </form>
-      </div>
-    </div>
-  </body>
+      <label>Par de apriete:</label>
+      <select name="par_apriete">
+        <option value="OK" {% if fila['Par de apriete'] == 'OK' %}selected{% endif %}>OK</option>
+        <option value="NO OK" {% if fila['Par de apriete'] == 'NO OK' %}selected{% endif %}>NO OK</option>
+      </select>
+
+      <label>CHECK LIST:</label>
+      <select name="check_list">
+        <option value="OK" {% if fila['CHECK LIST'] == 'OK' %}selected{% endif %}>OK</option>
+        <option value="NO OK" {% if fila['CHECK LIST'] == 'NO OK' %}selected{% endif %}>NO OK</option>
+      </select>
+
+      <label>Observaciones:</label>
+      <textarea name="observaciones">{{ fila['Observaciones'] }}</textarea>
+
+      <button type="submit">Guardar cambios</button>
+    </form>
+  </div>
+</body>
 </html>
 """
 
 
-# -------------------------- RUTAS FLASK -------------------------------
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        pin = request.form.get("pin", "")
-        trabajador_info = obtener_trabajador_desde_pin(pin)
-
-        if trabajador_info is None:
-            flash("PIN incorrecto.", "error")
-            return redirect(url_for("login"))
-
-        session["trabajador_id"] = trabajador_info["id"]
-        session["trabajador_nombre"] = trabajador_info["nombre"]
-        session["rol"] = trabajador_info.get("rol", "trabajador")
-
-        return redirect(url_for("formulario"))
-
-    return render_template_string(HTML_LOGIN)
+# ---------------------------------------------------------
+# MIDDLEWARE SENCILLO DE LOGIN
+# ---------------------------------------------------------
 
 
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
+def requiere_login():
+    if "user_id" not in session:
+        flash("Debes iniciar sesión con tu PIN.", "error")
+        return False
+    return True
+
+
+def rol_actual():
+    return session.get("rol", "trabajador")
+
+
+# ---------------------------------------------------------
+# RUTAS
+# ---------------------------------------------------------
 
 
 @app.route("/", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        pin = request.form.get("pin", "")
+        usuario = obtener_usuario_por_pin(pin)
+
+        if not usuario:
+            flash("PIN incorrecto. Inténtalo de nuevo.", "error")
+            return redirect(url_for("login"))
+
+        # Guardar en sesión
+        session["user_id"] = usuario["id"]
+        session["nombre"] = usuario["nombre"]
+        session["rol"] = usuario["rol"]
+
+        flash(f"Bienvenido, {usuario['nombre']}.", "msg")
+        return redirect(url_for("formulario"))
+
+    return render_template_string(LOGIN_HTML)
+
+
+@app.route("/salir")
+def logout():
+    session.clear()
+    flash("Has cerrado sesión.", "msg")
+    return redirect(url_for("login"))
+
+
+@app.route("/formulario", methods=["GET", "POST"])
 def formulario():
-    if "trabajador_id" not in session:
+    if not requiere_login():
         return redirect(url_for("login"))
 
-    trabajador_id = session["trabajador_id"]
-    trabajador_nombre = session["trabajador_nombre"]
-    rol = session.get("rol", "trabajador")
+    nombre = session.get("nombre", "")
+    rol = rol_actual()
+    rol_mostrar = rol_legible(rol)
 
     if request.method == "POST":
-        hora_inicio = request.form.get("hora_inicio", "")
-        hora_fin = request.form.get("hora_fin", "")
-        ct = int(request.form.get("ct"))
-        campo = int(request.form.get("campo"))
-        mesa = int(request.form.get("mesa"))
-        par_apriete = request.form.get("par_apriete")
-        check_list = request.form.get("check_list")
-        observaciones = request.form.get("observaciones")
+        # Datos del formulario
+        hora_inicio = request.form.get("hora_inicio", "").strip()
+        hora_fin = request.form.get("hora_fin", "").strip()
+        ct = request.form.get("ct", "0")
+        campo = request.form.get("campo", "0")
+        mesa = request.form.get("mesa", "0")
+        par_apriete = request.form.get("par_apriete", "")
+        check_list = request.form.get("check_list", "")
+        observaciones = request.form.get("observaciones", "")
 
-        # Completar horas si vienen vacías
-        if not hora_fin:
-            hora_fin = datetime.now().strftime("%H:%M")
-        if not hora_inicio:
-            hora_inicio = hora_fin
+        try:
+            ct_int = int(ct)
+            campo_int = int(campo)
+            mesa_int = int(mesa)
+        except ValueError:
+            flash("CT, Campo y Mesa deben ser números válidos.", "error")
+            return redirect(url_for("formulario"))
 
-        # Cargar datos existentes
-        df = cargar_datos()
+        # Cargar registros
+        df = cargar_registros()
 
-        # Asegurarnos de comparar numéricamente para duplicados
-        df_ct = pd.to_numeric(df["CT"], errors="coerce")
-        df_campo = pd.to_numeric(df["Campo/Área"], errors="coerce")
-        df_mesa = pd.to_numeric(df["Nº Mesa"], errors="coerce")
-
-        mismos = df[
-            (df_ct == ct) &
-            (df_campo == campo) &
-            (df_mesa == mesa)
+        # Comprobar duplicado (misma estructura CT+Campo+Mesa)
+        duplicado = df[
+            (df["CT"] == ct_int)
+            & (df["Campo/Área"] == campo_int)
+            & (df["Nº Mesa"] == mesa_int)
         ]
 
-        if not mismos.empty:
+        if not duplicado.empty:
             flash(
                 "Esta estructura ya ha sido registrada anteriormente. "
                 "Por favor, contacta con tu supervisor para aclarar esta situación.",
@@ -921,191 +918,135 @@ def formulario():
             )
             return redirect(url_for("formulario"))
 
-        # Si no existe, creamos un registro nuevo
-        nuevo = {
-            "ID trabajador": trabajador_id,
-            "Trabajador": trabajador_nombre,
-            "Fecha": date.today(),
+        hoy = date.today().isoformat()
+        nuevo_registro = {
+            "Trabajador_ID": session["user_id"],
+            "Trabajador_Nombre": nombre,
+            "Trabajador_Rol": rol_mostrar,
+            "Fecha": hoy,
             "Hora inicio": hora_inicio,
             "Hora fin": hora_fin,
-            "CT": ct,
-            "Campo/Área": campo,
-            "Nº Mesa": mesa,
+            "CT": ct_int,
+            "Campo/Área": campo_int,
+            "Nº Mesa": mesa_int,
             "Par de apriete": par_apriete,
             "CHECK LIST": check_list,
             "Observaciones": observaciones,
         }
 
-        df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
-        guardar_datos(df)
+        df = pd.concat([df, pd.DataFrame([nuevo_registro])], ignore_index=True)
+        guardar_registros(df)
 
-        flash("Registro guardado.", "msg")
+        flash("✅ Registro guardado correctamente.", "msg")
         return redirect(url_for("formulario"))
 
-    # GET: mostrar formulario
     return render_template_string(
-        HTML_FORM,
-        trabajador_nombre=trabajador_nombre,
-        rol=rol,
-        cts=list(range(1, MAX_CT + 1)),
-        campos=list(range(1, MAX_CAMPO + 1)),
-        mesas=list(range(1, MAX_MESA + 1)),
+        FORM_HTML, nombre=nombre, rol=rol, rol_mostrar=rol_mostrar
     )
 
 
 @app.route("/resumen")
 def resumen():
-    if "trabajador_id" not in session:
+    if not requiere_login():
         return redirect(url_for("login"))
 
-    rol = session.get("rol", "trabajador")
-    trabajador_id = session.get("trabajador_id")
-
-    # Solo admin y jefe_obra pueden ver el resumen
-    if rol not in ("admin", "jefe_obra"):
+    rol = rol_actual()
+    if rol not in ["admin", "jefe_obra"]:
         flash("No tienes permisos para ver el resumen.", "error")
         return redirect(url_for("formulario"))
 
-    df = cargar_datos()
+    df = cargar_registros()
 
-    # Filtro por rol:
-    # - admin: ve todo
-    # - jefe_obra: de momento, ve solo sus propios registros
-    if rol == "jefe_obra":
-        df = df[df["ID trabajador"] == trabajador_id]
+    # Convertir DataFrame a lista de filas (índice, dict)
+    registros = []
+    for i, fila in df.iterrows():
+        registros.append((i, fila))
 
-    total_registros = len(df)
-
-    if total_registros == 0:
-        prod_dia = []
-        registros = []
-    else:
-        df["Fecha"] = df["Fecha"].astype(str)
-        prod_dia_df = (
-            df.groupby("Fecha")
-            .size()
-            .reset_index(name="Registros")
-            .sort_values("Fecha", ascending=True)
-        )
-        prod_dia = prod_dia_df.to_dict(orient="records")
-
-        # Para permitir edición, añadimos la columna row_id (índice real en el Excel)
-        df_sorted = df.sort_values(
-            ["Fecha", "Hora inicio"], ascending=[True, True]
-        )
-        df_sorted = df_sorted.reset_index().rename(columns={"index": "row_id"})
-        registros = df_sorted.to_dict(orient="records")
-
-    puede_editar = rol in ("admin", "jefe_obra")
-
-    return render_template_string(
-        HTML_RESUMEN,
-        total_registros=total_registros,
-        prod_dia=prod_dia,
-        registros=registros,
-        puede_editar=puede_editar,
-    )
+    return render_template_string(RESUMEN_HTML, registros=registros)
 
 
-@app.route("/editar/<int:row_id>", methods=["GET", "POST"])
-def editar_registro(row_id):
-    if "trabajador_id" not in session:
+@app.route("/editar/<int:indice>", methods=["GET", "POST"])
+def editar_registro(indice):
+    if not requiere_login():
         return redirect(url_for("login"))
 
-    rol = session.get("rol", "trabajador")
-    editor_id = session.get("trabajador_id")
-    editor_nombre = session.get("trabajador_nombre")
-
-    # Solo admin y jefe_obra pueden editar
-    if rol not in ("admin", "jefe_obra"):
+    rol = rol_actual()
+    if rol not in ["admin", "jefe_obra"]:
         flash("No tienes permisos para editar registros.", "error")
         return redirect(url_for("resumen"))
 
-    df = cargar_datos()
+    df = cargar_registros()
 
-    if row_id not in df.index:
+    if indice < 0 or indice >= len(df):
         flash("Registro no encontrado.", "error")
         return redirect(url_for("resumen"))
 
-    registro = df.loc[row_id]
-
-    # Si es jefe_obra, solo puede editar sus propios registros (por ahora)
-    if rol == "jefe_obra" and registro["ID trabajador"] != editor_id:
-        flash("No tienes permisos para editar este registro.", "error")
-        return redirect(url_for("resumen"))
+    fila = df.iloc[indice].copy()
 
     if request.method == "POST":
-        nuevo_par = request.form.get("par_apriete")
-        nuevo_check = request.form.get("check_list")
+        nuevo_par = request.form.get("par_apriete", "")
+        nuevo_check = request.form.get("check_list", "")
         nuevas_obs = request.form.get("observaciones", "")
 
         cambios = []
-        ahora = datetime.now()
-        fecha_cambio = ahora.date()
-        hora_cambio = ahora.strftime("%H:%M")
 
-        # Comparar y registrar cambios en Par de apriete
-        valor_ant_par = registro["Par de apriete"]
-        if str(valor_ant_par) != str(nuevo_par):
+        if str(fila["Par de apriete"]) != nuevo_par:
             cambios.append(
-                {
-                    "Fecha cambio": fecha_cambio,
-                    "Hora cambio": hora_cambio,
-                    "ID editor": editor_id,
-                    "Editor": editor_nombre,
-                    "Rol editor": rol,
-                    "Row ID": row_id,
-                    "CT": registro["CT"],
-                    "Campo/Área": registro["Campo/Área"],
-                    "Nº Mesa": registro["Nº Mesa"],
-                    "Campo modificado": "Par de apriete",
-                    "Valor anterior": valor_ant_par,
-                    "Valor nuevo": nuevo_par,
-                }
+                ("Par de apriete", str(fila["Par de apriete"]), nuevo_par)
             )
-            df.loc[row_id, "Par de apriete"] = nuevo_par
 
-        # Comparar y registrar cambios en CHECK LIST
-        valor_ant_check = registro["CHECK LIST"]
-        if str(valor_ant_check) != str(nuevo_check):
+        if str(fila["CHECK LIST"]) != nuevo_check:
+            cambios.append(("CHECK LIST", str(fila["CHECK LIST"]), nuevo_check))
+
+        if str(fila["Observaciones"]) != nuevas_obs:
             cambios.append(
-                {
-                    "Fecha cambio": fecha_cambio,
-                    "Hora cambio": hora_cambio,
-                    "ID editor": editor_id,
-                    "Editor": editor_nombre,
-                    "Rol editor": rol,
-                    "Row ID": row_id,
-                    "CT": registro["CT"],
-                    "Campo/Área": registro["Campo/Área"],
-                    "Nº Mesa": registro["Nº Mesa"],
-                    "Campo modificado": "CHECK LIST",
-                    "Valor anterior": valor_ant_check,
-                    "Valor nuevo": nuevo_check,
-                }
+                ("Observaciones", str(fila["Observaciones"]), nuevas_obs)
             )
-            df.loc[row_id, "CHECK LIST"] = nuevo_check
 
-        # Observaciones: no lo metemos en auditoría de detalle,
-        # pero sí actualizamos el Excel
-        df.loc[row_id, "Observaciones"] = nuevas_obs
+        # Actualizar DataFrame
+        df.at[indice, "Par de apriete"] = nuevo_par
+        df.at[indice, "CHECK LIST"] = nuevo_check
+        df.at[indice, "Observaciones"] = nuevas_obs
 
-        guardar_datos(df)
+        guardar_registros(df)
 
-        # Guardar auditoría si hay cambios en Par de apriete / CHECK LIST
+        usuario_nombre = session.get("nombre", "")
+        rol_mostrar = rol_legible(rol)
+
+        ct = fila["CT"]
+        campo = fila["Campo/Área"]
+        mesa = fila["Nº Mesa"]
+
+        # Registrar cada cambio en auditoría
+        for campo_mod, val_ant, val_nuevo in cambios:
+            registrar_auditoria(
+                usuario=usuario_nombre,
+                rol=rol_mostrar,
+                accion="MODIFICACIÓN",
+                ct=ct,
+                campo=campo,
+                mesa=mesa,
+                campo_modificado=campo_mod,
+                valor_anterior=val_ant,
+                valor_nuevo=val_nuevo,
+            )
+
         if cambios:
-            guardar_auditoria(cambios)
-            flash("Cambios guardados y auditados correctamente.", "msg")
+            flash("✅ Cambios guardados y auditados.", "msg")
         else:
-            flash("No se ha modificado Par de apriete ni CHECK LIST.", "msg")
+            flash("No se ha modificado ningún valor.", "msg")
 
         return redirect(url_for("resumen"))
 
-    # GET: mostrar formulario de edición
-    reg_dict = registro.to_dict()
-    return render_template_string(HTML_EDITAR, reg=reg_dict)
+    # GET
+    return render_template_string(EDITAR_HTML, indice=indice, fila=fila)
 
+
+# ---------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # En local, debug=True; en Render no se usa esta línea.
+    app.run(debug=True, host="0.0.0.0", port=5000)
 
