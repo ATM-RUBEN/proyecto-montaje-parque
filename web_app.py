@@ -59,6 +59,7 @@ app = Flask(__name__)
 app.secret_key = "cambia_estO_por_algo_mas_largo_y_raro"
 
 
+# ------------ DATOS PRINCIPALES (ESTADO ACTUAL) ------------
 def cargar_datos():
     path = Path(EXCEL_FILE)
     if not path.exists():
@@ -79,6 +80,7 @@ def cargar_datos():
 
     df = pd.read_excel(path)
 
+    # Compatibilidad antigua: renombrar PPI a CHECK LIST si hace falta
     if "PPI" in df.columns and "CHECK LIST" not in df.columns:
         df = df.rename(columns={"PPI": "CHECK LIST"})
 
@@ -112,7 +114,7 @@ def obtener_trabajador_desde_pin(pin_introducido: str):
     return TRABAJADORES.get(pin_introducido)
 
 
-# ----------- LOGIN PANTALLA GRANDE ------------
+# ----------- LOGIN ------------
 HTML_LOGIN = """
 <!doctype html>
 <html lang="es">
@@ -253,7 +255,7 @@ HTML_LOGIN = """
 """
 
 
-# ----------- FORMULARIO PRINCIPAL (SIN TÍTULO, SOLO LOGO + NOMBRE) ------------
+# ----------- FORMULARIO PRINCIPAL ------------
 HTML_FORM = """
 <!doctype html>
 <html lang="es">
@@ -310,7 +312,7 @@ HTML_FORM = """
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-bottom: 14px;
+        margin-bottom: 8px;
       }
 
       .logo {
@@ -326,18 +328,28 @@ HTML_FORM = """
 
       label {
         display: block;
-        margin-top: 16px;
+        margin-top: 14px;
         font-size: 1.02rem;
         color: #111827;
       }
 
       input, select, textarea {
         width: 100%;
-        padding: 14px;
+        padding: 12px;
         margin-top: 6px;
-        font-size: 1.05rem;
+        font-size: 1.0rem;
         border-radius: 10px;
         border: 1px solid var(--atm-border);
+      }
+
+      input:focus, select:focus, textarea:focus {
+        outline: 2px solid var(--atm-red);
+        border-color: var(--atm-red);
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 80px;
       }
 
       button {
@@ -356,6 +368,25 @@ HTML_FORM = """
         display: flex;
         gap: 8px;
       }
+
+      .time-row button {
+        width: auto;
+        padding-inline: 10px;
+        font-size: 0.9rem;
+        border-radius: 999px;
+      }
+
+      .msg {
+        margin-top: 10px;
+        color: #16a34a;
+        font-size: 0.9rem;
+      }
+
+      .error {
+        margin-top: 10px;
+        color: #dc2626;
+        font-size: 0.9rem;
+      }
     </style>
 
     <script>
@@ -363,8 +394,12 @@ HTML_FORM = """
         const d = new Date();
         return String(d.getHours()).padStart(2, '0') + ":" + String(d.getMinutes()).padStart(2, '0');
       }
-      function marcarInicio() { document.getElementById('hora_inicio').value = horaActual(); }
-      function marcarFin()   { document.getElementById('hora_fin').value   = horaActual(); }
+      function marcarInicio() {
+        document.getElementById('hora_inicio').value = horaActual();
+      }
+      function marcarFin() {
+        document.getElementById('hora_fin').value = horaActual();
+      }
     </script>
 
   </head>
@@ -384,6 +419,14 @@ HTML_FORM = """
             <span class="worker-banner">👷 {{ trabajador_nombre }}</span>
           {% endif %}
         </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
 
         <form method="post" id="form-registro">
 
@@ -447,7 +490,7 @@ HTML_FORM = """
 """
 
 
-# ----------- RESUMEN (TODOS LOS REGISTROS Y TODAS LAS FECHAS) ------------
+# ----------- RESUMEN ------------
 HTML_RESUMEN = """
 <!doctype html>
 <html lang="es">
@@ -504,6 +547,9 @@ HTML_RESUMEN = """
         font-weight: bold;
       }
 
+      h2, h3 {
+        margin-top: 10px;
+      }
     </style>
   </head>
 
@@ -549,170 +595,6 @@ HTML_RESUMEN = """
         </tr>
         {% for r in registros %}
         <tr>
-          <td>{{ r["Fecha"] }}</td>
-          <td>{{ r["Hora inicio"] }}</td>
-          <td>{{ r["Hora fin"] }}</td>
-          <td>{{ r["ID trabajador"] }}</td>
-          <td>{{ r["Trabajador"] }}</td>
-          <td>{{ r["CT"] }}</td>
-          <td>{{ r["Campo/Área"] }}</td>
-          <td>{{ r["Nº Mesa"] }}</td>
-          <td>{{ r["Par de apriete"] }}</td>
-          <td>{{ r["CHECK LIST"] }}</td>
-          <td>{{ r["Observaciones"] }}</td>
-        </tr>
-        {% endfor %}
-      </table>
+          <td>{{ r["Fecha"] }}</td
 
-    </div>
-  </body>
-</html>
-"""
-
-
-# -------------------------- RUTAS FLASK -------------------------------
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        pin = request.form.get("pin", "")
-        trabajador_info = obtener_trabajador_desde_pin(pin)
-
-        if trabajador_info is None:
-            flash("PIN incorrecto.", "error")
-            return redirect(url_for("login"))
-
-        session["trabajador_id"] = trabajador_info["id"]
-        session["trabajador_nombre"] = trabajador_info["nombre"]
-
-        return redirect(url_for("formulario"))
-
-    return render_template_string(HTML_LOGIN)
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
-@app.route("/", methods=["GET", "POST"])
-def formulario():
-    # Si no hay trabajador en sesión, ir al login
-    if "trabajador_id" not in session:
-        return redirect(url_for("login"))
-
-    trabajador_id = session["trabajador_id"]
-    trabajador_nombre = session["trabajador_nombre"]
-
-    if request.method == "POST":
-        hora_inicio = request.form.get("hora_inicio", "")
-        hora_fin = request.form.get("hora_fin", "")
-        ct = int(request.form.get("ct"))
-        campo = int(request.form.get("campo"))
-        mesa = int(request.form.get("mesa"))
-        par_apriete = request.form.get("par_apriete")
-        check_list = request.form.get("check_list")
-        observaciones = request.form.get("observaciones")
-
-        # Completar horas si vienen vacías
-        if not hora_fin:
-            hora_fin = datetime.now().strftime("%H:%M")
-        if not hora_inicio:
-            hora_inicio = hora_fin
-
-        # Cargar datos existentes
-        df = cargar_datos()
-
-        # 🔍 Comprobar si ya existe esa estructura con los mismos estados
-        mismos_ct_campo_mesa = df[
-            (df["CT"] == ct) &
-            (df["Campo/Área"] == campo) &
-            (df["Nº Mesa"] == mesa)
-        ]
-
-        if not mismos_ct_campo_mesa.empty:
-            mismos_todo = mismos_ct_campo_mesa[
-                (mismos_ct_campo_mesa["Par de apriete"] == par_apriete) &
-                (mismos_ct_campo_mesa["CHECK LIST"] == check_list)
-            ]
-
-            # Si ya hay al menos un registro con exactamente CT, Campo, Mesa,
-            # Par de apriete y CHECK LIST iguales → bloquear
-            if not mismos_todo.empty:
-                flash(
-                    "Esta estructura ya ha sido registrada anteriormente. "
-                    "Por favor, contacta con tu supervisor para aclarar esta situación.",
-                    "error",
-                )
-                return redirect(url_for("formulario"))
-
-            # Si existe misma estructura pero con estados distintos,
-            # se permite guardar (caso de corrección)
-
-        # Crear nuevo registro
-        nuevo = {
-            "ID trabajador": trabajador_id,
-            "Trabajador": trabajador_nombre,
-            "Fecha": date.today(),
-            "Hora inicio": hora_inicio,
-            "Hora fin": hora_fin,
-            "CT": ct,
-            "Campo/Área": campo,
-            "Nº Mesa": mesa,
-            "Par de apriete": par_apriete,
-            "CHECK LIST": check_list,
-            "Observaciones": observaciones,
-        }
-
-        # Añadir y guardar
-        df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
-        guardar_datos(df)
-
-        flash("Registro guardado.", "msg")
-        return redirect(url_for("formulario"))
-
-    # GET: mostrar formulario
-    return render_template_string(
-        HTML_FORM,
-        trabajador_nombre=trabajador_nombre,
-        cts=list(range(1, MAX_CT + 1)),
-        campos=list(range(1, MAX_CAMPO + 1)),
-        mesas=list(range(1, MAX_MESA + 1)),
-    )
-
-
-
-@app.route("/resumen")
-def resumen():
-    df = cargar_datos()
-    total_registros = len(df)
-
-    df["Fecha"] = df["Fecha"].astype(str)
-
-    # TODAS LAS FECHAS
-    prod_dia_df = (
-        df.groupby("Fecha")
-        .size()
-        .reset_index(name="Registros")
-        .sort_values("Fecha", ascending=True)
-    )
-
-    prod_dia = prod_dia_df.to_dict(orient="records")
-
-    # TODOS LOS REGISTROS
-    registros = df.sort_values(
-        ["Fecha", "Hora inicio"], ascending=[True, True]
-    ).to_dict(orient="records")
-
-    return render_template_string(
-        HTML_RESUMEN,
-        total_registros=total_registros,
-        prod_dia=prod_dia,
-        registros=registros,
-    )
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
 
