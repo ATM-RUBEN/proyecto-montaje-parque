@@ -60,9 +60,20 @@ app.secret_key = "cambia_estO_por_algo_mas_largo_y_raro"
 
 
 def cargar_datos():
+    """
+    Carga el Excel de registros. Si no existe, crea uno nuevo.
+    Si encuentra una columna antigua 'PPI', la renombra a 'CHECK LIST'.
+    """
     path = Path(EXCEL_FILE)
     if path.exists():
-        return pd.read_excel(path)
+        df = pd.read_excel(path)
+
+        # Migración: si el Excel antiguo tiene PPI y no CHECK LIST, renombrar
+        if "PPI" in df.columns and "CHECK LIST" not in df.columns:
+            df = df.rename(columns={"PPI": "CHECK LIST"})
+            guardar_datos(df)
+
+        return df
     else:
         columnas = [
             "ID trabajador",
@@ -74,7 +85,7 @@ def cargar_datos():
             "Campo/Área",
             "Nº Mesa",
             "Par de apriete",
-            "PPI",
+            "CHECK LIST",
             "Observaciones",
         ]
         return pd.DataFrame(columns=columnas)
@@ -89,7 +100,7 @@ def obtener_trabajador_desde_pin(pin_introducido: str):
     return TRABAJADORES.get(pin_introducido)
 
 
-# ----------- PANTALLA LOGIN (PIN, OPCIÓN B: GRANDE PARA MÓVIL) ------------
+# ----------- PANTALLA LOGIN (PIN, ESTILO GRANDE PARA MÓVIL) ------------
 HTML_LOGIN = """
 <!doctype html>
 <html lang="es">
@@ -516,8 +527,8 @@ HTML_FORM = """
             </select>
           </label>
 
-          <label>PPI:
-            <select name="ppi">
+          <label>CHECK LIST:
+            <select name="check_list">
               <option value="OK">OK</option>
               <option value="NO OK">NO OK</option>
             </select>
@@ -653,7 +664,7 @@ HTML_RESUMEN = """
       </div>
 
       <div class="card">
-        <h3>Últimos 50 registros</h3>
+        <h3>Todos los registros</h3>
         {% if ultimos %}
           <table>
             <tr>
@@ -666,7 +677,7 @@ HTML_RESUMEN = """
               <th>Campo/Área</th>
               <th>Nº Mesa</th>
               <th>Par apriete</th>
-              <th>PPI</th>
+              <th>CHECK LIST</th>
               <th>Observaciones</th>
             </tr>
             {% for r in ultimos %}
@@ -680,7 +691,7 @@ HTML_RESUMEN = """
                 <td>{{ r["Campo/Área"] }}</td>
                 <td>{{ r["Nº Mesa"] }}</td>
                 <td>{{ r["Par de apriete"] }}</td>
-                <td>{{ r["PPI"] }}</td>
+                <td>{{ r["CHECK LIST"] }}</td>
                 <td>{{ r["Observaciones"] }}</td>
               </tr>
             {% endfor %}
@@ -700,8 +711,7 @@ HTML_RESUMEN = """
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    # Si ya hay trabajador en sesión, podríamos saltar al formulario,
-    # pero como quieres que siempre pida PIN al entrar, NO lo hacemos.
+    # Siempre pedimos PIN al entrar (aunque ya hubiera sesión previa)
     if request.method == "POST":
         pin = request.form.get("pin", "")
         trabajador_info = obtener_trabajador_desde_pin(pin)
@@ -716,6 +726,8 @@ def login():
         flash(f"Bienvenido, {trabajador_info['nombre']}.", "msg")
         return redirect(url_for("formulario"))
 
+    # Si hubiera sesión previa, la borramos para obligar a nuevo PIN
+    session.clear()
     return render_template_string(HTML_LOGIN)
 
 
@@ -742,7 +754,7 @@ def formulario():
         campo = request.form.get("campo", "")
         mesa = request.form.get("mesa", "")
         par_apriete = request.form.get("par_apriete", "")
-        ppi = request.form.get("ppi", "")
+        check_list = request.form.get("check_list", "")
         observaciones = request.form.get("observaciones", "")
 
         # Si no viene hora_fin (por si fallara el JS), la ponemos aquí
@@ -774,7 +786,7 @@ def formulario():
             "Campo/Área": campo_int,
             "Nº Mesa": mesa_int,
             "Par de apriete": par_apriete,
-            "PPI": ppi,
+            "CHECK LIST": check_list,
             "Observaciones": observaciones,
         }
 
@@ -817,17 +829,23 @@ def resumen():
     df = df.copy()
     df["Fecha"] = df["Fecha"].astype(str)
 
+    # Producción por día (últimos 10 días con registros)
     prod_dia_df = (
         df.groupby("Fecha")
         .size()
         .reset_index(name="Registros")
         .sort_values("Fecha", ascending=False)
         .head(10)
+        .sort_values("Fecha", ascending=True)
     )
     prod_dia = prod_dia_df.to_dict(orient="records")
 
-    ultimos_df = df.sort_index(ascending=False).head(50)
-    ultimos_df = ultimos_df.iloc[::-1]
+    # TODOS los registros, ordenados del más antiguo al más reciente
+    try:
+        ultimos_df = df.sort_values(["Fecha", "Hora inicio"], ascending=[True, True])
+    except Exception:
+        ultimos_df = df.sort_values("Fecha", ascending=True)
+
     ultimos = ultimos_df.to_dict(orient="records")
 
     return render_template_string(
@@ -840,6 +858,7 @@ def resumen():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 
 
