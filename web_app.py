@@ -1,6 +1,5 @@
-
 from flask import Flask, request, redirect, url_for, flash, render_template_string
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 import pandas as pd
 
@@ -31,6 +30,8 @@ def cargar_datos():
         columnas = [
             "Trabajador",
             "Fecha",
+            "Hora inicio",
+            "Hora fin",
             "CT",
             "Campo/Área",
             "Nº Mesa",
@@ -172,20 +173,41 @@ HTML_FORM = """
       }
 
       button {
-        margin-top: 22px;
-        padding: 16px;
-        width: 100%;
-        font-size: 1.1rem;
+        padding: 12px 16px;
+        font-size: 1.0rem;
         background: var(--atm-red);
         color: white;
         border: none;
         border-radius: 999px;
         font-weight: bold;
+        cursor: pointer;
       }
 
       button:active {
         transform: scale(0.98);
         background: var(--atm-red-dark);
+      }
+
+      .btn-guardar {
+        margin-top: 22px;
+        width: 100%;
+        font-size: 1.1rem;
+      }
+
+      .time-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .time-row input {
+        flex: 1;
+      }
+
+      .btn-time {
+        white-space: nowrap;
+        padding-inline: 12px;
+        font-size: 0.9rem;
       }
 
       .msg {
@@ -200,6 +222,36 @@ HTML_FORM = """
         font-size: 0.95rem;
       }
     </style>
+    <script>
+      function horaActual() {
+        const d = new Date();
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return hh + ":" + mm;
+      }
+
+      function marcarInicio() {
+        document.getElementById('hora_inicio').value = horaActual();
+      }
+
+      function marcarFin() {
+        document.getElementById('hora_fin').value = horaActual();
+      }
+
+      window.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('form-registro');
+        form.addEventListener('submit', function() {
+          const fin = document.getElementById('hora_fin');
+          const inicio = document.getElementById('hora_inicio');
+          if (!fin.value) {
+            fin.value = horaActual();   // si no han marcado fin, se pone al guardar
+          }
+          if (!inicio.value) {
+            inicio.value = fin.value;   // si tampoco hay inicio, se iguala a la hora de fin
+          }
+        });
+      });
+    </script>
   </head>
   <body>
     <div class="container">
@@ -228,10 +280,24 @@ HTML_FORM = """
           {% endif %}
         {% endwith %}
 
-        <form method="post">
+        <form method="post" id="form-registro">
 
           <label>PIN trabajador:
             <input type="password" name="pin" required>
+          </label>
+
+          <label>Hora inicio:
+            <div class="time-row">
+              <input type="text" name="hora_inicio" id="hora_inicio" readonly>
+              <button type="button" class="btn-time" onclick="marcarInicio()">Marcar inicio</button>
+            </div>
+          </label>
+
+          <label>Hora fin:
+            <div class="time-row">
+              <input type="text" name="hora_fin" id="hora_fin" readonly>
+              <button type="button" class="btn-time" onclick="marcarFin()">Marcar fin</button>
+            </div>
           </label>
 
           <label>CT (Centro de Transformación):
@@ -276,7 +342,7 @@ HTML_FORM = """
             <textarea name="observaciones"></textarea>
           </label>
 
-          <button type="submit">Guardar registro</button>
+          <button type="submit" class="btn-guardar">Guardar registro</button>
 
         </form>
       </div>
@@ -407,6 +473,8 @@ HTML_RESUMEN = """
           <table>
             <tr>
               <th>Fecha</th>
+              <th>Hora inicio</th>
+              <th>Hora fin</th>
               <th>Trabajador</th>
               <th>CT</th>
               <th>Campo/Área</th>
@@ -418,6 +486,8 @@ HTML_RESUMEN = """
             {% for r in ultimos %}
               <tr>
                 <td>{{ r["Fecha"] }}</td>
+                <td>{{ r["Hora inicio"] }}</td>
+                <td>{{ r["Hora fin"] }}</td>
                 <td>{{ r["Trabajador"] }}</td>
                 <td>{{ r["CT"] }}</td>
                 <td>{{ r["Campo/Área"] }}</td>
@@ -444,6 +514,8 @@ HTML_RESUMEN = """
 def formulario():
     if request.method == "POST":
         pin = request.form.get("pin", "")
+        hora_inicio = request.form.get("hora_inicio", "")
+        hora_fin = request.form.get("hora_fin", "")
         ct = request.form.get("ct", "")
         campo = request.form.get("campo", "")
         mesa = request.form.get("mesa", "")
@@ -456,6 +528,13 @@ def formulario():
         if trabajador is None:
             flash("PIN incorrecto. No se ha guardado el registro.", "error")
             return redirect(url_for("formulario"))
+
+        # Si no viene hora_fin (por si fallara el JS), la ponemos aquí
+        if not hora_fin:
+            hora_fin = datetime.now().strftime("%H:%M")
+        # Si no viene hora_inicio, igualarla a hora_fin
+        if not hora_inicio:
+            hora_inicio = hora_fin
 
         # Validación numérica
         try:
@@ -472,6 +551,8 @@ def formulario():
         nuevo_registro = {
             "Trabajador": trabajador,
             "Fecha": hoy,
+            "Hora inicio": hora_inicio,
+            "Hora fin": hora_fin,
             "CT": ct_int,
             "Campo/Área": campo_int,
             "Nº Mesa": mesa_int,
@@ -508,10 +589,8 @@ def resumen():
         )
 
     df = df.copy()
-    # Convertir fechas a texto para mostrar
     df["Fecha"] = df["Fecha"].astype(str)
 
-    # Producción por día (hasta 10 últimos días con registros)
     prod_dia_df = (
         df.groupby("Fecha")
         .size()
@@ -521,9 +600,8 @@ def resumen():
     )
     prod_dia = prod_dia_df.to_dict(orient="records")
 
-    # Últimos 50 registros
     ultimos_df = df.sort_index(ascending=False).head(50)
-    ultimos_df = ultimos_df.iloc[::-1]  # para mostrarlos en orden cronológico
+    ultimos_df = ultimos_df.iloc[::-1]
     ultimos = ultimos_df.to_dict(orient="records")
 
     return render_template_string(
@@ -536,3 +614,4 @@ def resumen():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
