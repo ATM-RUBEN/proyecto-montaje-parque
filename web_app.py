@@ -304,7 +304,7 @@ HTML_FORM = """
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-bottom: 10px;
+        margin-bottom: 14px;
       }
 
       .logo {
@@ -312,28 +312,10 @@ HTML_FORM = """
         width: auto;
       }
 
-      .title-block {
-        display: flex;
-        flex-direction: column;
-      }
-
-      .app-title {
-        font-size: 1.1rem;
-        font-weight: bold;
-        color: var(--atm-red);
-        line-height: 1.1;
-      }
-
-      .app-subtitle {
-        font-size: 0.90rem;
-        color: #4b5563;
-      }
-
       .worker-banner {
-        margin-top: 4px;
-        font-size: 0.95rem;
-        color: #111827;
+        font-size: 1.05rem;
         font-weight: bold;
+        color: #111827;
       }
 
       .section-title {
@@ -418,6 +400,7 @@ HTML_FORM = """
         font-size: 0.95rem;
       }
     </style>
+
     <script>
       function horaActual() {
         const d = new Date();
@@ -440,15 +423,17 @@ HTML_FORM = """
           const fin = document.getElementById('hora_fin');
           const inicio = document.getElementById('hora_inicio');
           if (!fin.value) {
-            fin.value = horaActual();   // si no han marcado fin, se pone al guardar
+            fin.value = horaActual();   // Se marca al guardar
           }
           if (!inicio.value) {
-            inicio.value = fin.value;   // si tampoco hay inicio, se iguala a la hora de fin
+            inicio.value = fin.value;   // Si no hay inicio, igual a fin
           }
         });
       });
     </script>
+
   </head>
+
   <body>
     <div class="container">
 
@@ -459,15 +444,12 @@ HTML_FORM = """
 
       <div class="card">
 
+        <!-- ENCABEZADO SIN TÍTULO NI SUBTÍTULO -->
         <div class="header">
           <img src="{{ url_for('static', filename='logo_atm.png') }}" alt="ATM España" class="logo">
-          <div class="title-block">
-            <span class="app-title">ATM España</span>
-            <span class="app-subtitle">Registro de montaje · Parque solar</span>
-            {% if trabajador_nombre %}
-              <span class="worker-banner">👷 Trabajador: {{ trabajador_nombre }}</span>
-            {% endif %}
-          </div>
+          {% if trabajador_nombre %}
+            <span class="worker-banner">👷 {{ trabajador_nombre }}</span>
+          {% endif %}
         </div>
 
         <p class="section-title">Introduce los datos del montaje en campo.</p>
