@@ -89,7 +89,148 @@ def obtener_trabajador_desde_pin(pin_introducido: str):
     return TRABAJADORES.get(pin_introducido)
 
 
-# ----------- FORMULARIO HTML CON LOGO ATM Y COLORES CORPORATIVOS ------------
+# ----------- PANTALLA LOGIN (PIN, OPCIÓN B: GRANDE PARA MÓVIL) ------------
+HTML_LOGIN = """
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceso trabajador - ATM España</title>
+    <style>
+      :root {
+        --atm-red: #e30613;
+        --atm-red-dark: #c40010;
+        --atm-gray-bg: #f9fafb;
+        --atm-border: #e5e7eb;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background: var(--atm-gray-bg);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .container {
+        width: 100%;
+        max-width: 420px;
+        padding: 16px;
+      }
+      .card {
+        background: #ffffff;
+        border-radius: 20px;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.15);
+        padding: 22px 18px 26px 18px;
+        border: 1px solid var(--atm-border);
+      }
+      .header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      .logo {
+        height: 60px;
+        width: auto;
+      }
+      .title {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: var(--atm-red);
+        text-align: center;
+      }
+      .subtitle {
+        font-size: 0.95rem;
+        text-align: center;
+        color: #4b5563;
+      }
+      form {
+        margin-top: 18px;
+      }
+      label {
+        display: block;
+        font-size: 1.0rem;
+        color: #111827;
+        margin-bottom: 6px;
+        text-align: center;
+      }
+      input[type="password"] {
+        width: 100%;
+        padding: 16px;
+        font-size: 1.3rem;
+        text-align: center;
+        letter-spacing: 0.25em;
+        border-radius: 14px;
+        border: 1px solid var(--atm-border);
+      }
+      input[type="password"]:focus {
+        outline: 2px solid var(--atm-red);
+        border-color: var(--atm-red);
+      }
+      button {
+        margin-top: 22px;
+        width: 100%;
+        padding: 16px;
+        font-size: 1.2rem;
+        background: var(--atm-red);
+        color: white;
+        border: none;
+        border-radius: 999px;
+        font-weight: bold;
+      }
+      button:active {
+        transform: scale(0.98);
+        background: var(--atm-red-dark);
+      }
+      .msg {
+        margin-top: 12px;
+        color: #16a34a;
+        font-size: 0.95rem;
+        text-align: center;
+      }
+      .error {
+        margin-top: 12px;
+        color: #dc2626;
+        font-size: 0.95rem;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="header">
+          <img src="{{ url_for('static', filename='logo_atm.png') }}" alt="ATM España" class="logo">
+          <div class="title">ATM España</div>
+          <div class="subtitle">Identifícate con tu PIN para registrar trabajos</div>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="post">
+          <label>PIN trabajador</label>
+          <input type="password" name="pin" inputmode="numeric" pattern="[0-9]*" required>
+          <button type="submit">Entrar</button>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>
+"""
+
+
+# ----------- FORMULARIO PRINCIPAL (SOLO SI YA HAY TRABAJADOR EN SESIÓN) ------------
 HTML_FORM = """
 <!doctype html>
 <html lang="es">
@@ -123,18 +264,20 @@ HTML_FORM = """
       }
 
       .top-nav {
-        text-align: right;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
         margin-bottom: 8px;
         font-size: 0.9rem;
       }
 
-      .link-resumen {
+      .link-resumen, .link-logout {
         color: var(--atm-red);
         text-decoration: none;
         font-weight: bold;
       }
 
-      .link-resumen:hover {
+      .link-resumen:hover, .link-logout:hover {
         text-decoration: underline;
       }
 
@@ -299,7 +442,8 @@ HTML_FORM = """
     <div class="container">
 
       <div class="top-nav">
-        <a href="{{ url_for('resumen') }}" class="link-resumen">📊 Ver resumen e informes</a>
+        <a href="{{ url_for('resumen') }}" class="link-resumen">📊 Resumen</a>
+        <a href="{{ url_for('logout') }}" class="link-logout">⏻ Salir</a>
       </div>
 
       <div class="card">
@@ -326,15 +470,6 @@ HTML_FORM = """
         {% endwith %}
 
         <form method="post" id="form-registro">
-
-          {% if not trabajador_nombre %}
-            <label>PIN trabajador:
-              <input type="password" name="pin" required>
-            </label>
-          {% else %}
-            <!-- Ya está logueado: no pedimos de nuevo el PIN -->
-            <input type="hidden" name="pin" value="">
-          {% endif %}
 
           <label>Hora inicio:
             <div class="time-row">
@@ -562,10 +697,45 @@ HTML_RESUMEN = """
 
 
 # -------------------------- RUTAS FLASK -------------------------------
-@app.route("/", methods=["GET", "POST"])
-def formulario():
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    # Si ya hay trabajador en sesión, podríamos saltar al formulario,
+    # pero como quieres que siempre pida PIN al entrar, NO lo hacemos.
     if request.method == "POST":
         pin = request.form.get("pin", "")
+        trabajador_info = obtener_trabajador_desde_pin(pin)
+        if trabajador_info is None:
+            flash("PIN incorrecto. Inténtalo de nuevo.", "error")
+            return redirect(url_for("login"))
+
+        # Guardar en sesión
+        session["trabajador_id"] = trabajador_info["id"]
+        session["trabajador_nombre"] = trabajador_info["nombre"]
+
+        flash(f"Bienvenido, {trabajador_info['nombre']}.", "msg")
+        return redirect(url_for("formulario"))
+
+    return render_template_string(HTML_LOGIN)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("Sesión cerrada. Introduce tu PIN para continuar.", "msg")
+    return redirect(url_for("login"))
+
+
+@app.route("/", methods=["GET", "POST"])
+def formulario():
+    # Si no hay trabajador en sesión, enviar siempre a login
+    if "trabajador_id" not in session or "trabajador_nombre" not in session:
+        return redirect(url_for("login"))
+
+    trabajador_id = session["trabajador_id"]
+    trabajador_nombre = session["trabajador_nombre"]
+
+    if request.method == "POST":
         hora_inicio = request.form.get("hora_inicio", "")
         hora_fin = request.form.get("hora_fin", "")
         ct = request.form.get("ct", "")
@@ -574,28 +744,6 @@ def formulario():
         par_apriete = request.form.get("par_apriete", "")
         ppi = request.form.get("ppi", "")
         observaciones = request.form.get("observaciones", "")
-
-        # --- Determinar trabajador a partir de PIN o sesión ---
-        trabajador_info = None
-
-        if pin:  # han introducido PIN ahora
-            trabajador_info = obtener_trabajador_desde_pin(pin)
-            if trabajador_info is None:
-                flash("PIN incorrecto. No se ha guardado el registro.", "error")
-                return redirect(url_for("formulario"))
-            # Guardar en sesión para siguientes registros
-            session["trabajador_id"] = trabajador_info["id"]
-            session["trabajador_nombre"] = trabajador_info["nombre"]
-        else:
-            # No hay PIN en el formulario: usar lo que tengamos en sesión
-            if "trabajador_id" in session and "trabajador_nombre" in session:
-                trabajador_info = {
-                    "id": session["trabajador_id"],
-                    "nombre": session["trabajador_nombre"],
-                }
-            else:
-                flash("Debes introducir tu PIN antes de registrar trabajos.", "error")
-                return redirect(url_for("formulario"))
 
         # Si no viene hora_fin (por si fallara el JS), la ponemos aquí
         if not hora_fin:
@@ -617,8 +765,8 @@ def formulario():
         df = cargar_datos()
 
         nuevo_registro = {
-            "ID trabajador": trabajador_info["id"],
-            "Trabajador": trabajador_info["nombre"],
+            "ID trabajador": trabajador_id,
+            "Trabajador": trabajador_nombre,
             "Fecha": hoy,
             "Hora inicio": hora_inicio,
             "Hora fin": hora_fin,
@@ -634,7 +782,7 @@ def formulario():
         guardar_datos(df)
 
         flash(
-            f"✅ Registro guardado correctamente para {trabajador_info['nombre']}.",
+            f"✅ Registro guardado correctamente para {trabajador_nombre}.",
             "msg",
         )
         return redirect(url_for("formulario"))
@@ -643,8 +791,6 @@ def formulario():
     cts = list(range(1, MAX_CT + 1))
     campos = list(range(1, MAX_CAMPO + 1))
     mesas = list(range(1, MAX_MESA + 1))
-
-    trabajador_nombre = session.get("trabajador_nombre")
 
     return render_template_string(
         HTML_FORM,
@@ -694,5 +840,6 @@ def resumen():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
 
