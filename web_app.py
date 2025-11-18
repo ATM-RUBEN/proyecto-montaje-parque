@@ -144,6 +144,7 @@ def cargar_trabajadores_desde_excel():
         idx_pin = 3
         idx_rol = 4
 
+    trabajadores ==[]
     trabajadores = {}
     for _, row in df.iterrows():
         try:
@@ -183,7 +184,13 @@ TRABAJADORES_PIN = cargar_trabajadores_desde_excel()
 def cargar_registros():
     path = Path(EXCEL_REGISTRO)
     if path.exists():
-        return pd.read_excel(path)
+        df = pd.read_excel(path)
+        # Aseguramos que existan las columnas de geolocalización aunque el Excel sea antiguo
+        if "Latitud" not in df.columns:
+            df["Latitud"] = ""
+        if "Longitud" not in df.columns:
+            df["Longitud"] = ""
+        return df
     columnas = [
         "Trabajador",
         "Nombre",
@@ -196,6 +203,8 @@ def cargar_registros():
         "Par de apriete",
         "CHECK LIST",
         "Observaciones",
+        "Latitud",
+        "Longitud",
     ]
     return pd.DataFrame(columns=columnas)
 
@@ -418,8 +427,49 @@ FORM_HTML = """
     }
     .msg { margin-top: 10px; color: green; font-size: 14px; }
     .error { margin-top: 10px; color: #e30613; font-size: 14px; }
+
+    .geo-info {
+      margin-top: 6px;
+      font-size: 13px;
+      color: #555;
+    }
   </style>
   <script>
+    function solicitarUbicacion() {
+      if (!navigator.geolocation) {
+        console.log("Geolocalización no soportada por este navegador.");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        function(pos) {
+          var lat = pos.coords.latitude.toFixed(6);
+          var lon = pos.coords.longitude.toFixed(6);
+          document.getElementById('latitud').value = lat;
+          document.getElementById('longitud').value = lon;
+          var texto = "Ubicación: " + lat + ", " + lon;
+          var span = document.getElementById('texto-geo');
+          if (span) {
+            span.textContent = texto;
+          }
+        },
+        function(error) {
+          console.log("Error al obtener geolocalización:", error);
+          var span = document.getElementById('texto-geo');
+          if (span) {
+            span.textContent = "Ubicación no disponible (permiso denegado o error).";
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000
+        }
+      );
+    }
+
+    window.addEventListener('load', function() {
+      solicitarUbicacion();
+    });
+
     function marcarAhora(idCampo) {
       const ahora = new Date();
       const hh = String(ahora.getHours()).padStart(2, '0');
@@ -462,6 +512,14 @@ FORM_HTML = """
         {% endfor %}
       {% endif %}
     {% endwith %}
+
+    <!-- Campos ocultos de geolocalización -->
+    <input type="hidden" id="latitud" name="latitud">
+    <input type="hidden" id="longitud" name="longitud">
+
+    <div class="geo-info">
+      <span id="texto-geo">Intentando obtener ubicación GPS...</span>
+    </div>
 
     <form method="post">
       <label>Hora inicio:</label>
@@ -706,6 +764,8 @@ RESUMEN_HTML = """
         <th>Par</th>
         <th>CHECK LIST</th>
         <th>Obs.</th>
+        <th>Lat</th>
+        <th>Lon</th>
         <th>Editar</th>
       </tr>
       {% for idx, row in registros %}
@@ -722,11 +782,13 @@ RESUMEN_HTML = """
           <td>{{ row["Par de apriete"] }}</td>
           <td>{{ row["CHECK LIST"] }}</td>
           <td>{{ row["Observaciones"] }}</td>
+          <td>{{ row["Latitud"] }}</td>
+          <td>{{ row["Longitud"] }}</td>
           <td><a href="{{ url_for('editar_registro', indice=idx) }}">Editar</a></td>
         </tr>
       {% endfor %}
       {% if registros|length == 0 %}
-        <tr><td colspan="13">Aún no hay registros.</td></tr>
+        <tr><td colspan="15">Aún no hay registros.</td></tr>
       {% endif %}
     </table>
   </div>
@@ -1143,6 +1205,9 @@ def formulario():
         check_list = request.form.get("check_list", "")
         observaciones = request.form.get("observaciones", "")
 
+        latitud = request.form.get("latitud", "").strip()
+        longitud = request.form.get("longitud", "").strip()
+
         try:
             ct_int = int(ct)
             campo_int = int(campo)
@@ -1181,6 +1246,8 @@ def formulario():
             "Par de apriete": par_apriete,
             "CHECK LIST": check_list,
             "Observaciones": observaciones,
+            "Latitud": latitud,
+            "Longitud": longitud,
         }
 
         df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
