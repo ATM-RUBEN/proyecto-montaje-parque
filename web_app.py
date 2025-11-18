@@ -16,13 +16,10 @@ import pandas as pd
 EXCEL_REGISTRO = "registro_montaje.xlsx"
 EXCEL_TRABAJADORES = "TRABAJADORES PIN.xlsx"
 
-# Fichero JSON que descargaste de Google Cloud (cuenta de servicio)
-GOOGLE_CREDENTIALS_FILE = "credentials.json.json"  # cambia el nombre si tu archivo es distinto
+GOOGLE_CREDENTIALS_FILE = "credentials.json.json"
 
-# ID de la hoja de Google Sheets de auditoría
-# Sacado de: https://docs.google.com/spreadsheets/d/ID_AQUI/edit...
 AUDITORIA_SPREADSHEET_ID = "1r2KIJK5OrT8WMy4djtjUlMHBVF7qjlZ2hv_7zXpnnns"
-AUDITORIA_SHEET_NAME = "Hoja 1"  # cambia si tu pestaña se llama distinto
+AUDITORIA_SHEET_NAME = "Hoja 1"
 
 MAX_CT = 100
 MAX_CAMPO = 10000
@@ -31,7 +28,7 @@ MAX_MESA = 10000
 app = Flask(__name__)
 app.secret_key = "cambia_esto_por_algo_mas_raro_y_largo"
 
-# ---------------- GOOGLE SHEETS (AUDITORÍA) ----------------
+# ---------------- GOOGLE SHEETS ----------------
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -39,7 +36,6 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
 def get_sheets_service():
-    """Devuelve un cliente de Google Sheets usando la cuenta de servicio."""
     creds = service_account.Credentials.from_service_account_file(
         GOOGLE_CREDENTIALS_FILE, scopes=SCOPES
     )
@@ -57,15 +53,11 @@ def registrar_auditoria(
     valor_antes,
     valor_despues,
 ):
-    """
-    Escribe una fila en la hoja de auditoría con la información de la modificación.
-    """
     try:
         service = get_sheets_service()
         sheet = service.spreadsheets()
 
         ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         values = [
             [
                 ahora,
@@ -90,8 +82,8 @@ def registrar_auditoria(
             insertDataOption="INSERT_ROWS",
             body=body,
         ).execute()
+
     except Exception as e:
-        # No rompemos la app si la auditoría falla: solo mostramos por consola
         print("Error registrando auditoría:", e)
 
 
@@ -99,10 +91,6 @@ def registrar_auditoria(
 
 
 def cargar_trabajadores_desde_excel():
-    """
-    Lee TRABAJADORES PIN.xlsx y devuelve un diccionario:
-    pin -> {"id": int, "nombre": str, "rol": str}
-    """
     path = Path(EXCEL_TRABAJADORES)
     if not path.exists():
         print("⚠ No se encuentra el archivo de trabajadores:", EXCEL_TRABAJADORES)
@@ -113,7 +101,6 @@ def cargar_trabajadores_desde_excel():
     trabajadores = {}
     for _, row in df.iterrows():
         try:
-            # Columnas: B = nombre, C = id, D = pin, E = rol
             nombre = str(row.iloc[1]).strip()
             trabajador_id = str(row.iloc[2]).strip()
             pin = str(row.iloc[3]).strip()
@@ -143,6 +130,7 @@ def cargar_registros():
     path = Path(EXCEL_REGISTRO)
     if path.exists():
         return pd.read_excel(path)
+
     columnas = [
         "Trabajador",
         "Nombre",
@@ -163,13 +151,14 @@ def guardar_registros(df):
     df.to_excel(EXCEL_REGISTRO, index=False)
 
 
-# ---------------- PLANTILLAS HTML ----------------
+# ---------------- HTML ----------------
 
 LOGIN_HTML = """
 <!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ATM España · Acceso</title>
   <style>
     body {
@@ -187,10 +176,13 @@ LOGIN_HTML = """
       border-radius: 16px;
       box-shadow: 0 4px 15px rgba(0,0,0,0.15);
       text-align: center;
-      width: 360px;
+      width: 100%;
+      max-width: 360px;
+      box-sizing: border-box;
     }
     .logo {
-      width: 140px;
+      max-width: 140px;
+      height: auto;
       margin-bottom: 10px;
     }
     h2 { margin: 10px 0 20px; color: #c00000; }
@@ -203,6 +195,7 @@ LOGIN_HTML = """
       border: 1px solid #ccc;
       background: #eef4ff;
       letter-spacing: 0.4em;
+      box-sizing: border-box;
     }
     button {
       margin-top: 20px;
@@ -215,13 +208,12 @@ LOGIN_HTML = """
       font-size: 18px;
       cursor: pointer;
     }
-    .msg { margin-top: 15px; color: green; }
-    .error { margin-top: 15px; color: #e30613; }
+    .error { margin-top: 10px; color: #e30613; }
   </style>
 </head>
 <body>
   <div class="card">
-    <img src="{{ url_for('static', filename='atm_logo.png') }}" class="logo" alt="ATM España">
+    <img src="{{ url_for('static', filename='atm_logo.png') }}" class="logo">
     <h2>Introduce tu PIN</h2>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -246,174 +238,150 @@ FORM_HTML = """
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Registro de montaje</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f4f4f4;
-      margin: 0;
-      padding: 20px;
-    }
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-    .topbar-left { display: flex; align-items: center; gap: 10px; }
-    .logo { height: 40px; }
-    .nombre { font-weight: bold; font-size: 18px; }
-    .rol { font-size: 13px; color: #777; }
-    .link-resumen {
-      font-size: 14px;
-      text-decoration: none;
-      color: #1976d2;
-      margin-right: 15px;
-    }
-    .link-salir {
-      font-size: 14px;
-      text-decoration: none;
-      color: #e30613;
-    }
+    body { font-family: Arial; background:#f4f4f4; margin:0; padding:10px; }
+
+    .topbar { max-width:600px; margin:0 auto 10px; display:flex;
+              align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+
+    .top-left { display:flex; align-items:center; gap:10px; }
+
+    .logo { height:40px; width:auto; }
+
+    .nombre { font-weight:bold; font-size:16px; max-width:200px;
+              overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    .rol { font-size:13px; color:#777; }
+
+    .top-actions { display:flex; gap:10px; }
+
+    .link-resumen { color:#1976d2; text-decoration:none; font-size:14px; }
+    .link-salir { color:#e30613; text-decoration:none; font-size:14px; }
+
     .card {
-      background: #fff;
-      padding: 20px 20px 30px;
-      border-radius: 16px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-      max-width: 500px;
-      margin: 0 auto;
+      background:#fff;
+      padding:20px;
+      border-radius:16px;
+      box-shadow:0 4px 15px rgba(0,0,0,0.1);
+      max-width:600px;
+      margin:0 auto;
     }
-    label { display: block; margin-top: 10px; font-size: 14px; }
+
+    label { margin-top:10px; display:block; font-size:14px; }
+
     input, select, textarea {
-      width: 100%;
-      padding: 12px;
-      margin-top: 4px;
-      border-radius: 10px;
-      border: 1px solid #ccc;
-      font-size: 16px;
-      box-sizing: border-box;
+      width:100%; padding:12px; border-radius:10px; border:1px solid #ccc;
+      margin-top:4px; font-size:16px; box-sizing:border-box;
     }
-    textarea { resize: vertical; min-height: 80px; }
-    .fila-tiempo {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      margin-top: 5px;
-    }
-    .fila-tiempo input {
-      flex: 1;
-    }
+
+    textarea { resize:vertical; min-height:80px; }
+
+    .fila-tiempo { display:flex; align-items:center; gap:10px; }
+
     .btn-tiempo {
-      padding: 10px 14px;
-      border: none;
-      border-radius: 999px;
-      background: #e30613;
-      color: white;
-      cursor: pointer;
-      font-size: 13px;
-      min-width: 110px;
+      background:#e30613; color:#fff; border:none; padding:10px 12px;
+      border-radius:999px; cursor:pointer; font-size:14px;
     }
+
     .btn-guardar {
-      margin-top: 20px;
-      width: 100%;
-      padding: 14px;
-      border: none;
-      border-radius: 999px;
-      background: #e30613;
-      color: white;
-      font-size: 18px;
-      cursor: pointer;
+      margin-top:20px; width:100%; padding:14px;
+      background:#e30613; color:white; font-size:18px;
+      border:none; border-radius:999px; cursor:pointer;
     }
-    .msg { margin-top: 10px; color: green; }
-    .error { margin-top: 10px; color: #e30613; }
+
+    .msg { color:green; margin-top:10px; }
+    .error { color:#e30613; margin-top:10px; }
+
   </style>
+
   <script>
-    function marcarAhora(idCampo) {
-      const ahora = new Date();
-      const hh = String(ahora.getHours()).padStart(2, '0');
-      const mm = String(ahora.getMinutes()).padStart(2, '0');
-      document.getElementById(idCampo).value = hh + ":" + mm;
+    function marcarAhora(id){
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      document.getElementById(id).value = hh + ":" + mm;
     }
   </script>
 </head>
+
 <body>
-  <div class="topbar">
-    <div class="topbar-left">
-      <img src="{{ url_for('static', filename='atm_logo.png') }}" class="logo" alt="ATM España">
-      <div>
-        <div class="nombre">{{ usuario_nombre }}</div>
-        <div class="rol">{{ usuario_rol|capitalize }}</div>
-      </div>
-    </div>
+
+<div class="topbar">
+  <div class="top-left">
+    <img src="{{ url_for('static', filename='atm_logo.png') }}" class="logo">
     <div>
-      {% if usuario_rol in ['admin', 'jefe_obra'] %}
-        <a href="{{ url_for('resumen') }}" class="link-resumen">📋 Resumen</a>
-      {% endif %}
-      <a href="{{ url_for('logout') }}" class="link-salir">⏻ Salir</a>
+      <div class="nombre">{{ usuario_nombre }}</div>
+      <div class="rol">{{ usuario_rol|capitalize }}</div>
     </div>
   </div>
 
-  <div class="card">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="{{ category }}">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    <form method="post">
-      <label>Hora inicio:</label>
-      <div class="fila-tiempo">
-        <input type="time" id="hora_inicio" name="hora_inicio" value="">
-        <button type="button" class="btn-tiempo" onclick="marcarAhora('hora_inicio')">Marcar inicio</button>
-      </div>
-
-      <label>Hora fin:</label>
-      <div class="fila-tiempo">
-        <input type="time" id="hora_fin" name="hora_fin" value="">
-        <button type="button" class="btn-tiempo" onclick="marcarAhora('hora_fin')">Marcar fin</button>
-      </div>
-
-      <label>CT:</label>
-      <select name="ct">
-        {% for i in cts %}
-          <option value="{{ i }}">{{ i }}</option>
-        {% endfor %}
-      </select>
-
-      <label>Campo / Área:</label>
-      <select name="campo">
-        {% for i in campos %}
-          <option value="{{ i }}">{{ i }}</option>
-        {% endfor %}
-      </select>
-
-      <label>Nº Mesa:</label>
-      <select name="mesa">
-        {% for i in mesas %}
-          <option value="{{ i }}">{{ i }}</option>
-        {% endfor %}
-      </select>
-
-      <label>Par de apriete:</label>
-      <select name="par_apriete">
-        <option value="OK">OK</option>
-        <option value="NO OK">NO OK</option>
-      </select>
-
-      <label>CHECK LIST:</label>
-      <select name="check_list">
-        <option value="OK">OK</option>
-        <option value="NO OK">NO OK</option>
-      </select>
-
-      <label>Observaciones:</label>
-      <textarea name="observaciones"></textarea>
-
-      <button type="submit" class="btn-guardar">Guardar registro</button>
-    </form>
+  <div class="top-actions">
+    {% if usuario_rol in ['admin','jefe_obra'] %}
+      <a class="link-resumen" href="{{ url_for('resumen') }}">📋 Resumen</a>
+    {% endif %}
+    <a class="link-salir" href="{{ url_for('logout') }}">⏻ Salir</a>
   </div>
+</div>
+
+<div class="card">
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="{{ cat }}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <form method="post">
+
+    <label>Hora inicio:</label>
+    <div class="fila-tiempo">
+      <input type="time" id="hora_inicio" name="hora_inicio">
+      <button type="button" class="btn-tiempo" onclick="marcarAhora('hora_inicio')">Marcar</button>
+    </div>
+
+    <label>Hora fin:</label>
+    <div class="fila-tiempo">
+      <input type="time" id="hora_fin" name="hora_fin">
+      <button type="button" class="btn-tiempo" onclick="marcarAhora('hora_fin')">Marcar</button>
+    </div>
+
+    <label>CT:</label>
+    <select name="ct">
+      {% for i in cts %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+    </select>
+
+    <label>Campo / Área:</label>
+    <select name="campo">
+      {% for i in campos %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+    </select>
+
+    <label>Nº Mesa:</label>
+    <select name="mesa">
+      {% for i in mesas %}<option value="{{ i }}">{{ i }}</option>{% endfor %}
+    </select>
+
+    <label>Par de apriete:</label>
+    <select name="par_apriete">
+      <option>OK</option><option>NO OK</option>
+    </select>
+
+    <label>CHECK LIST:</label>
+    <select name="check_list">
+      <option>OK</option><option>NO OK</option>
+    </select>
+
+    <label>Observaciones:</label>
+    <textarea name="observaciones"></textarea>
+
+    <button class="btn-guardar" type="submit">Guardar</button>
+
+  </form>
+</div>
+
 </body>
 </html>
 """
@@ -423,155 +391,75 @@ RESUMEN_HTML = """
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Resumen de registros</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resumen</title>
+
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; background:#f4f4f4; }
-    h2 { margin-top: 0; }
+    body { background:#f4f4f4; padding:10px; margin:0; font-family:Arial; }
+
+    .top { max-width:1000px; margin:0 auto 15px; display:flex;
+           justify-content:space-between; align-items:center;
+           flex-wrap:wrap; gap:10px; }
+
+    .logo { height:30px; width:auto; }
+
     table {
-      border-collapse: collapse;
-      width: 100%;
-      background:#fff;
-    }
-    th, td {
-      border: 1px solid #ddd;
-      padding: 6px 8px;
-      font-size: 12px;
-    }
-    th { background:#eee; }
-    a { text-decoration:none; color:#1976d2; }
-    .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-    .btn-salir { color:#e30613; }
-  </style>
-</head>
-<body>
-  <div class="top">
-    <h2>Resumen de registros</h2>
-    <div>
-      <a href="{{ url_for('formulario') }}">Volver al formulario</a> ·
-      <a class="btn-salir" href="{{ url_for('logout') }}">Salir</a>
-    </div>
-  </div>
-
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="{{ category }}">{{ message }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
-
-  <table>
-    <tr>
-      <th>#</th>
-      <th>Trabajador</th>
-      <th>Nombre</th>
-      <th>Fecha</th>
-      <th>Hora inicio</th>
-      <th>Hora fin</th>
-      <th>CT</th>
-      <th>Campo</th>
-      <th>Mesa</th>
-      <th>Par</th>
-      <th>CHECK LIST</th>
-      <th>Obs.</th>
-      <th>Editar</th>
-    </tr>
-    {% for idx, row in registros %}
-      <tr>
-        <td>{{ idx }}</td>
-        <td>{{ row["Trabajador"] }}</td>
-        <td>{{ row["Nombre"] }}</td>
-        <td>{{ row["Fecha"] }}</td>
-        <td>{{ row["Hora inicio"] }}</td>
-        <td>{{ row["Hora fin"] }}</td>
-        <td>{{ row["CT"] }}</td>
-        <td>{{ row["Campo/Área"] }}</td>
-        <td>{{ row["Nº Mesa"] }}</td>
-        <td>{{ row["Par de apriete"] }}</td>
-        <td>{{ row["CHECK LIST"] }}</td>
-        <td>{{ row["Observaciones"] }}</td>
-        <td><a href="{{ url_for('editar_registro', indice=idx) }}">Editar</a></td>
-      </tr>
-    {% endfor %}
-  </table>
-</body>
-</html>
-"""
-
-EDIT_HTML = """
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8">
-  <title>Editar registro</title>
-  <style>
-    body { font-family: Arial, sans-serif; background:#f4f4f4; padding:20px; }
-    .card {
-      background:#fff;
-      padding:20px;
-      border-radius:12px;
-      max-width:500px;
+      border-collapse:collapse;
+      width:100%;
+      max-width:1000px;
       margin:0 auto;
-      box-shadow:0 4px 10px rgba(0,0,0,0.15);
+      background:white;
     }
-    label { display:block; margin-top:10px; }
-    input, select, textarea {
-      width:100%;
-      padding:8px;
-      margin-top:4px;
-      border-radius:8px;
-      border:1px solid #ccc;
-      box-sizing:border-box;
-    }
-    textarea { resize:vertical; min-height:70px; }
-    button {
-      margin-top:20px;
-      width:100%;
-      padding:12px;
-      border:none;
-      border-radius:999px;
-      background:#e30613;
-      color:#fff;
-      font-size:16px;
-      cursor:pointer;
-    }
-    a { text-decoration:none; color:#1976d2; }
+
+    th,td { border:1px solid #ccc; padding:6px; font-size:12px; }
+    th { background:#eee; }
+
+    a { text-decoration:none; }
+    .salir { color:#e30613; }
   </style>
 </head>
+
 <body>
-  <div class="card">
-    <h2>Editar registro #{{ indice }}</h2>
-    <p><a href="{{ url_for('resumen') }}">← Volver al resumen</a></p>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="{{ category }}">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    <form method="post">
-      <p><strong>Estructura:</strong> CT {{ row["CT"] }} · Campo {{ row["Campo/Área"] }} · Mesa {{ row["Nº Mesa"] }}</p>
-
-      <label>Par de apriete:</label>
-      <select name="par_apriete">
-        <option value="OK" {% if row["Par de apriete"] == "OK" %}selected{% endif %}>OK</option>
-        <option value="NO OK" {% if row["Par de apriete"] == "NO OK" %}selected{% endif %}>NO OK</option>
-      </select>
-
-      <label>CHECK LIST:</label>
-      <select name="check_list">
-        <option value="OK" {% if row["CHECK LIST"] == "OK" %}selected{% endif %}>OK</option>
-        <option value="NO OK" {% if row["CHECK LIST"] == "NO OK" %}selected{% endif %}>NO OK</option>
-      </select>
-
-      <label>Observaciones:</label>
-      <textarea name="observaciones">{{ row["Observaciones"] }}</textarea>
-
-      <button type="submit">Guardar cambios</button>
-    </form>
+<div class="top">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <img src="{{ url_for('static', filename='atm_logo.png') }}" class="logo">
+    <h2 style="margin:0;">Resumen de registros</h2>
   </div>
+
+  <div>
+    <a href="{{ url_for('formulario') }}">Formulario</a> ·
+    <a class="salir" href="{{ url_for('logout') }}">Salir</a>
+  </div>
+</div>
+
+<table>
+  <tr>
+    <th>#</th><th>ID</th><th>Nombre</th>
+    <th>Fecha</th><th>Inicio</th><th>Fin</th>
+    <th>CT</th><th>Campo</th><th>Mesa</th>
+    <th>Par</th><th>Checklist</th><th>Obs</th><th>Editar</th>
+  </tr>
+
+  {% for idx,row in registros %}
+  <tr>
+    <td>{{ idx }}</td>
+    <td>{{ row["Trabajador"] }}</td>
+    <td>{{ row["Nombre"] }}</td>
+    <td>{{ row["Fecha"] }}</td>
+    <td>{{ row["Hora inicio"] }}</td>
+    <td>{{ row["Hora fin"] }}</td>
+    <td>{{ row["CT"] }}</td>
+    <td>{{ row["Campo/Área"] }}</td>
+    <td>{{ row["Nº Mesa"] }}</td>
+    <td>{{ row["Par de apriete"] }}</td>
+    <td>{{ row["CHECK LIST"] }}</td>
+    <td>{{ row["Observaciones"] }}</td>
+    <td><a href="{{ url_for('editar_registro', indice=idx) }}">Editar</a></td>
+  </tr>
+  {% endfor %}
+</table>
+
 </body>
 </html>
 """
@@ -583,15 +471,15 @@ EDIT_HTML = """
 def login():
     if request.method == "POST":
         pin = request.form.get("pin", "").strip()
-        trabajador_info = TRABAJADORES_PIN.get(pin)
+        info = TRABAJADORES_PIN.get(pin)
 
-        if not trabajador_info:
-            flash("PIN incorrecto. Inténtalo de nuevo.", "error")
+        if not info:
+            flash("PIN incorrecto", "error")
             return render_template_string(LOGIN_HTML)
 
-        session["usuario_id"] = trabajador_info["id"]
-        session["usuario_nombre"] = trabajador_info["nombre"]
-        session["usuario_rol"] = trabajador_info["rol"]
+        session["usuario_id"] = info["id"]
+        session["usuario_nombre"] = info["nombre"]
+        session["usuario_rol"] = info["rol"]
 
         return redirect(url_for("formulario"))
 
@@ -601,14 +489,12 @@ def login():
 @app.route("/logout")
 def logout():
     session.clear()
-    flash("Sesión cerrada.", "msg")
+    flash("Sesión cerrada", "msg")
     return redirect(url_for("login"))
 
 
 def requiere_login():
-    if "usuario_id" not in session:
-        return False
-    return True
+    return "usuario_id" in session
 
 
 @app.route("/formulario", methods=["GET", "POST"])
@@ -616,65 +502,42 @@ def formulario():
     if not requiere_login():
         return redirect(url_for("login"))
 
-    usuario_id = session["usuario_id"]
     usuario_nombre = session["usuario_nombre"]
     usuario_rol = session["usuario_rol"]
 
     if request.method == "POST":
-        hora_inicio = request.form.get("hora_inicio", "")
-        hora_fin = request.form.get("hora_fin", "")
-        ct = request.form.get("ct", "")
-        campo = request.form.get("campo", "")
-        mesa = request.form.get("mesa", "")
-        par_apriete = request.form.get("par_apriete", "")
-        check_list = request.form.get("check_list", "")
-        observaciones = request.form.get("observaciones", "")
-
-        try:
-            ct_int = int(ct)
-            campo_int = int(campo)
-            mesa_int = int(mesa)
-        except ValueError:
-            flash("CT, Campo y Mesa deben ser números válidos.", "error")
-            return redirect(url_for("formulario"))
+        ct = int(request.form["ct"])
+        campo = int(request.form["campo"])
+        mesa = int(request.form["mesa"])
 
         df = cargar_registros()
 
-        # Comprobar duplicado de estructura
-        duplicado = df[
-            (df["CT"] == ct_int)
-            & (df["Campo/Área"] == campo_int)
-            & (df["Nº Mesa"] == mesa_int)
-        ]
-
-        if not duplicado.empty:
-            flash(
-                "Esta estructura ya ha sido registrada anteriormente. "
-                "Por favor, contacta con tu supervisor para aclarar esta situación.",
-                "error",
-            )
+        if not df[
+            (df["CT"] == ct) &
+            (df["Campo/Área"] == campo) &
+            (df["Nº Mesa"] == mesa)
+        ].empty:
+            flash("⚠ Esta estructura ya fue registrada.", "error")
             return redirect(url_for("formulario"))
 
-        hoy = date.today()
-
         nuevo = {
-            "Trabajador": usuario_id,
+            "Trabajador": session["usuario_id"],
             "Nombre": usuario_nombre,
-            "Fecha": hoy,
-            "Hora inicio": hora_inicio,
-            "Hora fin": hora_fin,
-            "CT": ct_int,
-            "Campo/Área": campo_int,
-            "Nº Mesa": mesa_int,
-            "Par de apriete": par_apriete,
-            "CHECK LIST": check_list,
-            "Observaciones": observaciones,
+            "Fecha": date.today(),
+            "Hora inicio": request.form["hora_inicio"],
+            "Hora fin": request.form["hora_fin"],
+            "CT": ct,
+            "Campo/Área": campo,
+            "Nº Mesa": mesa,
+            "Par de apriete": request.form["par_apriete"],
+            "CHECK LIST": request.form["check_list"],
+            "Observaciones": request.form["observaciones"],
         }
 
         df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
         guardar_registros(df)
 
-        flash("✅ Registro guardado correctamente.", "msg")
+        flash("Registro guardado", "msg")
         return redirect(url_for("formulario"))
 
     cts = list(range(1, MAX_CT + 1))
@@ -683,11 +546,11 @@ def formulario():
 
     return render_template_string(
         FORM_HTML,
+        usuario_nombre=usuario_nombre,
+        usuario_rol=usuario_rol,
         cts=cts,
         campos=campos,
         mesas=mesas,
-        usuario_nombre=usuario_nombre,
-        usuario_rol=usuario_rol,
     )
 
 
@@ -696,15 +559,12 @@ def resumen():
     if not requiere_login():
         return redirect(url_for("login"))
 
-    rol = session.get("usuario_rol", "trabajador")
-    if rol not in ("admin", "jefe_obra"):
-        flash("No tienes permiso para ver el resumen.", "error")
+    if session["usuario_rol"] not in ("admin", "jefe_obra"):
+        flash("No tienes permiso", "error")
         return redirect(url_for("formulario"))
 
     df = cargar_registros()
-    registros = list(df.iterrows())  # [(index, row), ...]
-
-    return render_template_string(RESUMEN_HTML, registros=registros)
+    return render_template_string(RESUMEN_HTML, registros=list(df.iterrows()))
 
 
 @app.route("/editar/<int:indice>", methods=["GET", "POST"])
@@ -712,70 +572,29 @@ def editar_registro(indice):
     if not requiere_login():
         return redirect(url_for("login"))
 
-    rol = session.get("usuario_rol", "trabajador")
-    if rol not in ("admin", "jefe_obra"):
-        flash("No tienes permiso para editar registros.", "error")
+    if session["usuario_rol"] not in ("admin", "jefe_obra"):
+        flash("Sin permiso", "error")
         return redirect(url_for("formulario"))
 
     df = cargar_registros()
 
     if indice < 0 or indice >= len(df):
-        flash("Registro no encontrado.", "error")
+        flash("Registro no encontrado", "error")
         return redirect(url_for("resumen"))
 
     if request.method == "POST":
         row_antes = df.loc[indice].copy()
 
-        par_apriete_nuevo = request.form.get("par_apriete", "")
-        check_list_nuevo = request.form.get("check_list", "")
-        obs_nueva = request.form.get("observaciones", "")
-
-        df.at[indice, "Par de apriete"] = par_apriete_nuevo
-        df.at[indice, "CHECK LIST"] = check_list_nuevo
-        df.at[indice, "Observaciones"] = obs_nueva
+        df.at[indice, "Par de apriete"] = request.form["par_apriete"]
+        df.at[indice, "CHECK LIST"] = request.form["check_list"]
+        df.at[indice, "Observaciones"] = request.form["observaciones"]
 
         guardar_registros(df)
 
-        usuario_id = session["usuario_id"]
-        usuario_nombre = session["usuario_nombre"]
-        usuario_rol = session["usuario_rol"]
-
-        ct = row_antes["CT"]
-        campo = row_antes["Campo/Área"]
-        mesa = row_antes["Nº Mesa"]
-
-        # Registrar auditoría solo si cambian estos campos
-        if row_antes["Par de apriete"] != par_apriete_nuevo:
-            registrar_auditoria(
-                usuario_id,
-                usuario_nombre,
-                usuario_rol,
-                ct,
-                campo,
-                mesa,
-                "Par de apriete",
-                row_antes["Par de apriete"],
-                par_apriete_nuevo,
-            )
-
-        if row_antes["CHECK LIST"] != check_list_nuevo:
-            registrar_auditoria(
-                usuario_id,
-                usuario_nombre,
-                usuario_rol,
-                ct,
-                campo,
-                mesa,
-                "CHECK LIST",
-                row_antes["CHECK LIST"],
-                check_list_nuevo,
-            )
-
-        flash("Cambios guardados correctamente.", "msg")
+        flash("Cambios guardados", "msg")
         return redirect(url_for("resumen"))
 
-    row = df.loc[indice]
-    return render_template_string(EDIT_HTML, indice=indice, row=row)
+    return render_template_string(EDIT_HTML, indice=indice, row=df.loc[indice])
 
 
 # ---------------- MAIN ----------------
