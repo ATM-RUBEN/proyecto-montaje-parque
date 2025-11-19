@@ -15,7 +15,7 @@ import os
 
 # ---------------- CONFIGURACIÓN ----------------
 
-# Nuevo fichero de registros para empezar limpio
+# Nuevo fichero de registros limpio
 EXCEL_REGISTRO = "registro_montaje_v2.xlsx"
 EXCEL_TRABAJADORES = "TRABAJADORES PIN.xlsx"
 
@@ -104,6 +104,64 @@ def guardar_registros(df: pd.DataFrame):
     df.to_excel(EXCEL_REGISTRO, index=False)
 
 
+# ---------------- ESTILOS COMUNES (ENCABEZADO TIPO APP CENTRADO) ----------------
+
+COMMON_HEADER_CSS = """
+    .app-shell {
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .app-header {
+      text-align: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #ddd;
+    }
+    .app-logo {
+      margin-bottom: 6px;
+    }
+    .app-logo img {
+      height: 48px;
+    }
+    .app-user-name {
+      font-weight: bold;
+      font-size: 20px;
+      margin-top: 4px;
+    }
+    .app-user-role {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      color: #666;
+      margin-top: 2px;
+    }
+    .app-user-role-icon {
+      font-size: 16px;
+    }
+    .app-nav {
+      margin-top: 10px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .app-nav a {
+      text-decoration: none;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid #ddd;
+      background: #ffffff;
+      color: #1976d2;
+      font-size: 14px;
+    }
+    .app-nav a.logout {
+      border-color: #f5b5b5;
+      background: #ffe5e5;
+      color: #c00000;
+    }
+"""
+
 # ---------------- PLANTILLAS HTML ----------------
 
 LOGIN_HTML = """
@@ -111,6 +169,7 @@ LOGIN_HTML = """
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ATM España · Acceso</title>
   <style>
     body {
@@ -129,28 +188,30 @@ LOGIN_HTML = """
       box-shadow: 0 4px 15px rgba(0,0,0,0.15);
       text-align: center;
       width: 360px;
+      max-width: 90%;
     }
     .logo {
-      width: 140px;
+      width: 150px;
       margin-bottom: 10px;
     }
-    h2 { margin: 10px 0 20px; color: #c00000; }
+    h2 { margin: 10px 0 20px; color: #c00000; font-size: 20px; }
     input[type=password] {
       width: 100%;
-      padding: 12px;
-      font-size: 20px;
+      padding: 14px;
+      font-size: 22px;
       text-align: center;
-      border-radius: 8px;
+      border-radius: 10px;
       border: 1px solid #ccc;
       background: #eef4ff;
-      letter-spacing: 0.4em;
+      letter-spacing: 0.35em;
+      box-sizing: border-box;
     }
     button {
       margin-top: 20px;
       width: 100%;
-      padding: 12px;
+      padding: 14px;
       border: none;
-      border-radius: 8px;
+      border-radius: 999px;
       background: #e30613;
       color: white;
       font-size: 18px;
@@ -182,94 +243,24 @@ LOGIN_HTML = """
 </html>
 """
 
-# ---- ENCABEZADO TIPO APP (FORM, RESUMEN, ESTADÍSTICAS) ----
-# Logo arriba izquierda, nombre centrado, rol+icono debajo, menú distribuido
-
-COMMON_HEADER_CSS = """
-    .app-shell {
-      max-width: 900px;
-      margin: 0 auto;
-    }
-    .app-header {
-      padding-bottom: 10px;
-      margin-bottom: 10px;
-      border-bottom: 1px solid #ddd;
-    }
-    .app-header-top {
-      display: grid;
-      grid-template-columns: 60px 1fr 60px;
-      align-items: center;
-      column-gap: 10px;
-    }
-    .app-logo-left {
-      justify-self: start;
-    }
-    .app-logo-left img {
-      height: 40px;
-    }
-    .app-user {
-      text-align: center;
-    }
-    .app-user-name {
-      font-weight: bold;
-      font-size: 18px;
-    }
-    .app-user-role {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      color: #777;
-      margin-top: 2px;
-    }
-    .app-user-role-icon {
-      font-size: 16px;
-    }
-    .app-header-spacer {
-      /* reservado para futuros iconos/notificaciones si quieres */
-    }
-    .app-nav {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 12px;
-      flex-wrap: wrap;
-      gap: 8px;
-      font-size: 14px;
-    }
-    .app-nav-left, .app-nav-right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .app-nav a {
-      text-decoration: none;
-      color: #1976d2;
-    }
-    .app-nav a.logout {
-      color: #e30613;
-    }
-"""
-
 FORM_HTML = """
 <!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Registro de montaje</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       background: #f4f4f4;
       margin: 0;
-      padding: 20px;
+      padding: 16px;
     }
     {{ common_header_css|safe }}
     .card {
       background: #fff;
-      padding: 20px 20px 30px;
+      padding: 20px 18px 28px;
       border-radius: 16px;
       box-shadow: 0 4px 15px rgba(0,0,0,0.15);
       max-width: 480px;
@@ -316,8 +307,8 @@ FORM_HTML = """
       font-size: 18px;
       cursor: pointer;
     }
-    .msg { margin-top: 10px; color: green; }
-    .error { margin-top: 10px; color: #e30613; }
+    .msg { margin-top: 10px; color: green; font-size: 14px; }
+    .error { margin-top: 10px; color: #e30613; font-size: 14px; }
   </style>
   <script>
     function marcarAhora(idCampo) {
@@ -331,33 +322,23 @@ FORM_HTML = """
 <body>
   <div class="app-shell">
     <header class="app-header">
-      <div class="app-header-top">
-        <div class="app-logo-left">
-          <img src="{{ url_for('static', filename='atm_logo.png') }}" alt="ATM España">
-        </div>
-        <div class="app-user">
-          <div class="app-user-name">{{ usuario_nombre }}</div>
-          <div class="app-user-role">
-            <span class="app-user-role-icon">
-              {% if usuario_rol == 'admin' %}👑{% elif usuario_rol == 'jefe_obra' %}🦺{% else %}👷{% endif %}
-            </span>
-            <span>{{ usuario_rol|capitalize }}</span>
-          </div>
-        </div>
-        <div class="app-header-spacer"></div>
+      <div class="app-logo">
+        <img src="{{ url_for('static', filename='atm_logo.png') }}" alt="ATM España">
       </div>
-
+      <div class="app-user-name">{{ usuario_nombre }}</div>
+      <div class="app-user-role">
+        <span class="app-user-role-icon">
+          {% if usuario_rol == 'admin' %}👑{% elif usuario_rol == 'jefe_obra' %}🦺{% else %}👷{% endif %}
+        </span>
+        <span>{{ usuario_rol|capitalize }}</span>
+      </div>
       <nav class="app-nav">
-        <div class="app-nav-left">
-          <a href="{{ url_for('formulario') }}">📝 Formulario</a>
-          {% if usuario_rol in ['admin', 'jefe_obra'] %}
-            <a href="{{ url_for('resumen') }}">📋 Resumen</a>
-            <a href="{{ url_for('estadisticas') }}">📊 Estadísticas</a>
-          {% endif %}
-        </div>
-        <div class="app-nav-right">
-          <a href="{{ url_for('logout') }}" class="logout">⏻ Salir</a>
-        </div>
+        <a href="{{ url_for('formulario') }}">📝 Formulario</a>
+        {% if usuario_rol in ['admin', 'jefe_obra'] %}
+          <a href="{{ url_for('resumen') }}">📋 Resumen</a>
+          <a href="{{ url_for('estadisticas') }}">📊 Estadísticas</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}" class="logout">⏻ Salir</a>
       </nav>
     </header>
 
@@ -432,13 +413,14 @@ RESUMEN_HTML = """
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Resumen de registros</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       background:#f4f4f4;
       margin:0;
-      padding:20px;
+      padding:16px;
     }
     {{ common_header_css|safe }}
     .section {
@@ -458,7 +440,7 @@ RESUMEN_HTML = """
     }
     h2 {
       margin:0;
-      font-size:18px;
+      font-size:16px;
     }
     table {
       border-collapse:collapse;
@@ -500,31 +482,21 @@ RESUMEN_HTML = """
 <body>
   <div class="app-shell">
     <header class="app-header">
-      <div class="app-header-top">
-        <div class="app-logo-left">
-          <img src="{{ url_for('static', filename='atm_logo.png') }}" alt="ATM España">
-        </div>
-        <div class="app-user">
-          <div class="app-user-name">{{ usuario_nombre }}</div>
-          <div class="app-user-role">
-            <span class="app-user-role-icon">
-              {% if usuario_rol == 'admin' %}👑{% elif usuario_rol == 'jefe_obra' %}🦺{% else %}👷{% endif %}
-            </span>
-            <span>{{ usuario_rol|capitalize }}</span>
-          </div>
-        </div>
-        <div class="app-header-spacer"></div>
+      <div class="app-logo">
+        <img src="{{ url_for('static', filename='atm_logo.png') }}" alt="ATM España">
       </div>
-
+      <div class="app-user-name">{{ usuario_nombre }}</div>
+      <div class="app-user-role">
+        <span class="app-user-role-icon">
+          {% if usuario_rol == 'admin' %}👑{% elif usuario_rol == 'jefe_obra' %}🦺{% else %}👷{% endif %}
+        </span>
+        <span>{{ usuario_rol|capitalize }}</span>
+      </div>
       <nav class="app-nav">
-        <div class="app-nav-left">
-          <a href="{{ url_for('formulario') }}">📝 Formulario</a>
-          <a href="{{ url_for('resumen') }}">📋 Resumen</a>
-          <a href="{{ url_for('estadisticas') }}">📊 Estadísticas</a>
-        </div>
-        <div class="app-nav-right">
-          <a href="{{ url_for('logout') }}" class="logout">⏻ Salir</a>
-        </div>
+        <a href="{{ url_for('formulario') }}">📝 Formulario</a>
+        <a href="{{ url_for('resumen') }}">📋 Resumen</a>
+        <a href="{{ url_for('estadisticas') }}">📊 Estadísticas</a>
+        <a href="{{ url_for('logout') }}" class="logout">⏻ Salir</a>
       </nav>
     </header>
 
@@ -629,18 +601,20 @@ EDIT_HTML = """
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Editar registro</title>
   <style>
-    body { font-family: Arial, sans-serif; background:#f4f4f4; padding:20px; }
+    body { font-family: Arial, sans-serif; background:#f4f4f4; padding:16px; margin:0; }
     .card {
       background:#fff;
       padding:20px;
       border-radius:12px;
-      max-width:500px;
+      max-width:480px;
       margin:0 auto;
       box-shadow:0 4px 10px rgba(0,0,0,0.15);
     }
-    label { display:block; margin-top:10px; }
+    h2 { margin-top:0; font-size:18px; }
+    label { display:block; margin-top:10px; font-size:14px; }
     input, select, textarea {
       width:100%;
       padding:8px;
@@ -648,6 +622,7 @@ EDIT_HTML = """
       border-radius:8px;
       border:1px solid #ccc;
       box-sizing:border-box;
+      font-size:14px;
     }
     textarea { resize:vertical; min-height:70px; }
     button {
@@ -661,7 +636,7 @@ EDIT_HTML = """
       font-size:16px;
       cursor:pointer;
     }
-    a { text-decoration:none; color:#1976d2; }
+    a { text-decoration:none; color:#1976d2; font-size:14px; }
   </style>
 </head>
 <body>
@@ -707,6 +682,7 @@ ESTADISTICAS_HTML = """
 <html lang="es">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Estadísticas de montaje</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -714,14 +690,19 @@ ESTADISTICAS_HTML = """
       font-family: Arial, sans-serif;
       background: #f4f4f4;
       margin: 0;
-      padding: 20px;
+      padding: 16px;
     }
     {{ common_header_css|safe }}
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: 1fr;
       gap: 20px;
       margin-top: 10px;
+    }
+    @media (min-width: 700px) {
+      .grid {
+        grid-template-columns: repeat(2, minmax(260px, 1fr));
+      }
     }
     .card {
       background: #fff;
@@ -749,31 +730,21 @@ ESTADISTICAS_HTML = """
 <body>
   <div class="app-shell">
     <header class="app-header">
-      <div class="app-header-top">
-        <div class="app-logo-left">
-          <img src="{{ url_for('static', filename='atm_logo.png') }}" alt="ATM España">
-        </div>
-        <div class="app-user">
-          <div class="app-user-name">{{ usuario_nombre }}</div>
-          <div class="app-user-role">
-            <span class="app-user-role-icon">
-              {% if usuario_rol == 'admin' %}👑{% elif usuario_rol == 'jefe_obra' %}🦺{% else %}👷{% endif %}
-            </span>
-            <span>{{ usuario_rol|capitalize }}</span>
-          </div>
-        </div>
-        <div class="app-header-spacer"></div>
+      <div class="app-logo">
+        <img src="{{ url_for('static', filename='atm_logo.png') }}" alt="ATM España">
       </div>
-
+      <div class="app-user-name">{{ usuario_nombre }}</div>
+      <div class="app-user-role">
+        <span class="app-user-role-icon">
+          {% if usuario_rol == 'admin' %}👑{% elif usuario_rol == 'jefe_obra' %}🦺{% else %}👷{% endif %}
+        </span>
+        <span>{{ usuario_rol|capitalize }}</span>
+      </div>
       <nav class="app-nav">
-        <div class="app-nav-left">
-          <a href="{{ url_for('formulario') }}">📝 Formulario</a>
-          <a href="{{ url_for('resumen') }}">📋 Resumen</a>
-          <a href="{{ url_for('estadisticas') }}">📊 Estadísticas</a>
-        </div>
-        <div class="app-nav-right">
-          <a href="{{ url_for('logout') }}" class="logout">⏻ Salir</a>
-        </div>
+        <a href="{{ url_for('formulario') }}">📝 Formulario</a>
+        <a href="{{ url_for('resumen') }}">📋 Resumen</a>
+        <a href="{{ url_for('estadisticas') }}">📊 Estadísticas</a>
+        <a href="{{ url_for('logout') }}" class="logout">⏻ Salir</a>
       </nav>
     </header>
 
