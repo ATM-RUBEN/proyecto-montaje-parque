@@ -477,6 +477,10 @@ RESUMEN_HTML = """
     }
     .error { color:#e30613; }
     .msg { color:green; }
+    tfoot td {
+      font-weight: bold;
+      background:#f7f7f7;
+    }
   </style>
 </head>
 <body>
@@ -508,6 +512,7 @@ RESUMEN_HTML = """
       {% endif %}
     {% endwith %}
 
+    <!-- 1) Resumen diario general -->
     <div class="section">
       <div class="section-header">
         <h2>Resumen diario (nº de registros por día)</h2>
@@ -528,12 +533,45 @@ RESUMEN_HTML = """
               <td>{{ fila["Conteo"] }}</td>
             </tr>
           {% endfor %}
+          <tr>
+            <td><strong>TOTAL</strong></td>
+            <td><strong>{{ total_registros }}</strong></td>
+          </tr>
         </table>
       {% else %}
         <p>Aún no hay registros.</p>
       {% endif %}
     </div>
 
+    <!-- 2) Resumen diario 100% terminadas -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Resumen diario 100% terminadas (Par OK + CHECK LIST OK)</h2>
+      </div>
+
+      {% if resumen_diario_100 %}
+        <table>
+          <tr>
+            <th>Fecha</th>
+            <th>Unidades 100% terminadas</th>
+          </tr>
+          {% for fila in resumen_diario_100 %}
+            <tr>
+              <td>{{ fila["Fecha"] }}</td>
+              <td>{{ fila["Terminadas"] }}</td>
+            </tr>
+          {% endfor %}
+          <tr>
+            <td><strong>TOTAL</strong></td>
+            <td><strong>{{ total_terminadas }}</strong></td>
+          </tr>
+        </table>
+      {% else %}
+        <p>Aún no hay estructuras 100% terminadas.</p>
+      {% endif %}
+    </div>
+
+    <!-- 3) Detalle de todos los registros -->
     <div class="section">
       <div class="section-header">
         <h2>Detalle de todos los registros</h2>
@@ -1004,17 +1042,30 @@ def resumen():
 
     df = cargar_registros()
 
-    # Resumen por días
     if df.empty:
         resumen_diario = []
+        resumen_diario_100 = []
+        total_registros = 0
+        total_terminadas = 0
     else:
         df["Fecha"] = df["Fecha"].astype(str)
-        resumen_diario = (
-            df.groupby("Fecha")
-            .size()
-            .reset_index(name="Conteo")
-            .to_dict("records")
-        )
+
+        # Resumen diario general
+        resumen_diario_df = df.groupby("Fecha").size().reset_index(name="Conteo")
+        resumen_diario = resumen_diario_df.to_dict("records")
+        total_registros = int(resumen_diario_df["Conteo"].sum())
+
+        # Filtrar solo las estructuras 100% terminadas
+        df_100 = df[(df["Par de apriete"] == "OK") & (df["CHECK LIST"] == "OK")]
+        if df_100.empty:
+            resumen_diario_100 = []
+            total_terminadas = 0
+        else:
+            resumen_100_df = df_100.groupby("Fecha").size().reset_index(
+                name="Terminadas"
+            )
+            resumen_diario_100 = resumen_100_df.to_dict("records")
+            total_terminadas = int(resumen_100_df["Terminadas"].sum())
 
     registros = list(df.iterrows())
 
@@ -1023,6 +1074,9 @@ def resumen():
         usuario_nombre=usuario_nombre,
         usuario_rol=usuario_rol,
         resumen_diario=resumen_diario,
+        total_registros=total_registros,
+        resumen_diario_100=resumen_diario_100,
+        total_terminadas=total_terminadas,
         registros=registros,
         common_header_css=COMMON_HEADER_CSS,
     )
