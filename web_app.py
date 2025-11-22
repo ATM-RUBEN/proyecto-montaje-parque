@@ -15,7 +15,6 @@ import os
 
 # ---------------- CONFIGURACIÓN ----------------
 
-# Nuevo fichero de registros limpio
 EXCEL_REGISTRO = "registro_montaje_v2.xlsx"
 EXCEL_TRABAJADORES = "TRABAJADORES PIN.xlsx"
 
@@ -26,7 +25,6 @@ MAX_MESA = 10000
 app = Flask(__name__)
 app.secret_key = "cambia_esto_por_algo_mas_raro_y_largo"
 
-# Carpeta static para logo y excels descargables
 STATIC_DIR = Path("static")
 STATIC_DIR.mkdir(exist_ok=True)
 
@@ -37,6 +35,7 @@ def cargar_trabajadores_desde_excel():
     """
     Lee TRABAJADORES PIN.xlsx y devuelve:
       pin -> {"id": int, "nombre": str, "rol": str}
+
     Estructura esperada:
       Col B: Nombre
       Col C: ID
@@ -104,7 +103,7 @@ def guardar_registros(df: pd.DataFrame):
     df.to_excel(EXCEL_REGISTRO, index=False)
 
 
-# ---------------- ESTILOS COMUNES (ENCABEZADO TIPO APP CENTRADO) ----------------
+# ---------------- ESTILOS COMUNES (ENCABEZADO TIPO APP) ----------------
 
 COMMON_HEADER_CSS = """
     .app-shell {
@@ -481,6 +480,48 @@ RESUMEN_HTML = """
       font-weight: bold;
       background:#f7f7f7;
     }
+    .filtros {
+      background:#fff;
+      padding:10px 12px;
+      border-radius:12px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom:16px;
+      font-size:13px;
+    }
+    .filtros form {
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:flex-end;
+    }
+    .filtros label {
+      display:flex;
+      flex-direction:column;
+      font-size:12px;
+    }
+    .filtros input, .filtros select {
+      padding:6px 8px;
+      border-radius:8px;
+      border:1px solid #ccc;
+      min-width:70px;
+      font-size:13px;
+    }
+    .filtros button {
+      padding:8px 12px;
+      border-radius:999px;
+      border:none;
+      background:#1976d2;
+      color:#fff;
+      font-size:13px;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .filtros a.reset {
+      font-size:12px;
+      color:#1976d2;
+      text-decoration:none;
+      margin-left:4px;
+    }
   </style>
 </head>
 <body>
@@ -512,6 +553,41 @@ RESUMEN_HTML = """
       {% endif %}
     {% endwith %}
 
+    <!-- Filtros -->
+    <div class="filtros">
+      <form method="get" action="{{ url_for('resumen') }}">
+        <label>
+          CT
+          <input type="number" name="f_ct" value="{{ filtro_ct or '' }}" min="1">
+        </label>
+        <label>
+          Campo / Área
+          <input type="number" name="f_campo" value="{{ filtro_campo or '' }}" min="1">
+        </label>
+        <label>
+          Trabajador
+          <select name="f_trab">
+            <option value="">Todos</option>
+            {% for nombre in trabajadores_opciones %}
+              <option value="{{ nombre }}" {% if filtro_trabajador == nombre %}selected{% endif %}>{{ nombre }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div>
+          <button type="submit">Aplicar filtros</button>
+          <a href="{{ url_for('resumen') }}" class="reset">Quitar filtros</a>
+        </div>
+      </form>
+      {% if hay_filtros %}
+        <div style="margin-top:6px; font-size:12px; color:#555;">
+          Filtros activos:
+          {% if filtro_ct %} CT={{ filtro_ct }} {% endif %}
+          {% if filtro_campo %} · Campo={{ filtro_campo }} {% endif %}
+          {% if filtro_trabajador %} · Trabajador={{ filtro_trabajador }} {% endif %}
+        </div>
+      {% endif %}
+    </div>
+
     <!-- 1) Resumen diario general -->
     <div class="section">
       <div class="section-header">
@@ -534,12 +610,12 @@ RESUMEN_HTML = """
             </tr>
           {% endfor %}
           <tr>
-            <td><strong>TOTAL</strong></td>
+            <td><strong>TOTAL (filtrado)</strong></td>
             <td><strong>{{ total_registros }}</strong></td>
           </tr>
         </table>
       {% else %}
-        <p>Aún no hay registros.</p>
+        <p>Aún no hay registros (con estos filtros).</p>
       {% endif %}
     </div>
 
@@ -565,19 +641,48 @@ RESUMEN_HTML = """
             </tr>
           {% endfor %}
           <tr>
-            <td><strong>TOTAL</strong></td>
+            <td><strong>TOTAL (filtrado)</strong></td>
             <td><strong>{{ total_terminadas }}</strong></td>
           </tr>
         </table>
       {% else %}
-        <p>Aún no hay estructuras 100% terminadas.</p>
+        <p>No hay estructuras 100% terminadas con estos filtros.</p>
+      {% endif %}
+    </div>
+
+    <!-- 2.5) Tabla de % de avance global -->
+    <div class="section">
+      <div class="section-header">
+        <h2>% de avance (sobre datos filtrados)</h2>
+      </div>
+      {% if total_registros > 0 %}
+        <table>
+          <tr>
+            <th>Total registros (filtrados)</th>
+            <th>Total 100% terminadas</th>
+            <th>% Avance</th>
+          </tr>
+          <tr>
+            <td>{{ total_registros }}</td>
+            <td>{{ total_terminadas }}</td>
+            <td>
+              {% if total_registros > 0 %}
+                {{ "%.1f"|format((total_terminadas / total_registros) * 100) }} %
+              {% else %}
+                0.0 %
+              {% endif %}
+            </td>
+          </tr>
+        </table>
+      {% else %}
+        <p>No hay datos para calcular el avance con estos filtros.</p>
       {% endif %}
     </div>
 
     <!-- 3) Detalle de todos los registros -->
     <div class="section">
       <div class="section-header">
-        <h2>Detalle de todos los registros</h2>
+        <h2>Detalle de registros (filtrados)</h2>
         <form method="get" action="{{ url_for('descargar_detalle') }}">
           <button type="submit" class="btn-descargar">⬇ Descargar Excel</button>
         </form>
@@ -629,7 +734,7 @@ RESUMEN_HTML = """
           {% endfor %}
         </table>
       {% else %}
-        <p>Aún no hay registros.</p>
+        <p>No hay registros con estos filtros.</p>
       {% endif %}
     </div>
   </div>
@@ -976,7 +1081,6 @@ def formulario():
 
         df = cargar_registros()
 
-        # Comprobar duplicado de estructura
         duplicado = df[
             (df["CT"] == ct_int)
             & (df["Campo/Área"] == campo_int)
@@ -1028,7 +1132,7 @@ def formulario():
     )
 
 
-# ---------------- RESUMEN ----------------
+# ---------------- RESUMEN (con filtros + % avance) ----------------
 
 
 @app.route("/resumen", methods=["GET", "POST"])
@@ -1043,7 +1147,48 @@ def resumen():
         flash("No tienes permiso para ver el resumen.", "error")
         return redirect(url_for("formulario"))
 
-    df = cargar_registros()
+    # Filtros desde la URL
+    f_ct_raw = request.args.get("f_ct", "").strip()
+    f_campo_raw = request.args.get("f_campo", "").strip()
+    f_trab = request.args.get("f_trab", "").strip()
+
+    f_ct = None
+    f_campo = None
+
+    if f_ct_raw:
+        try:
+            f_ct = int(f_ct_raw)
+        except ValueError:
+            f_ct = None
+
+    if f_campo_raw:
+        try:
+            f_campo = int(f_campo_raw)
+        except ValueError:
+            f_campo = None
+
+    df_all = cargar_registros()
+
+    # Opciones de trabajadores para el select
+    if df_all.empty:
+        trabajadores_opciones = []
+    else:
+        trabajadores_opciones = sorted(
+            [x for x in df_all["Nombre"].dropna().unique().tolist() if str(x).strip()]
+        )
+
+    if df_all.empty:
+        df = df_all.copy()
+    else:
+        df = df_all.copy()
+        if f_ct is not None:
+            df = df[df["CT"] == f_ct]
+        if f_campo is not None:
+            df = df[df["Campo/Área"] == f_campo]
+        if f_trab:
+            df = df[df["Nombre"] == f_trab]
+
+    hay_filtros = bool(f_ct or f_campo or f_trab)
 
     if df.empty:
         resumen_diario = []
@@ -1053,12 +1198,10 @@ def resumen():
     else:
         df["Fecha"] = df["Fecha"].astype(str)
 
-        # Resumen diario general
         resumen_diario_df = df.groupby("Fecha").size().reset_index(name="Conteo")
         resumen_diario = resumen_diario_df.to_dict("records")
         total_registros = int(resumen_diario_df["Conteo"].sum())
 
-        # Filtrar solo las estructuras 100% terminadas
         df_100 = df[(df["Par de apriete"] == "OK") & (df["CHECK LIST"] == "OK")]
         if df_100.empty:
             resumen_diario_100 = []
@@ -1082,6 +1225,11 @@ def resumen():
         total_terminadas=total_terminadas,
         registros=registros,
         common_header_css=COMMON_HEADER_CSS,
+        filtro_ct=f_ct_raw or "",
+        filtro_campo=f_campo_raw or "",
+        filtro_trabajador=f_trab or "",
+        trabajadores_opciones=trabajadores_opciones,
+        hay_filtros=hay_filtros,
     )
 
 
@@ -1230,22 +1378,18 @@ def estadisticas():
 
     df["Fecha"] = df["Fecha"].astype(str)
 
-    # Avance diario
     diario = df.groupby("Fecha").size().reset_index(name="conteo")
     daily_labels = diario["Fecha"].tolist()
     daily_values = diario["conteo"].tolist()
 
-    # Checklist
     checklist_counts = df["CHECK LIST"].value_counts()
     checklist_labels = checklist_counts.index.tolist()
     checklist_values = checklist_counts.values.tolist()
 
-    # Par de apriete
     par_counts = df["Par de apriete"].value_counts()
     par_labels = par_counts.index.tolist()
     par_values = par_counts.values.tolist()
 
-    # Por trabajador
     trab = df.groupby("Nombre").size().reset_index(name="conteo")
     worker_labels = trab["Nombre"].tolist()
     worker_values = trab["conteo"].tolist()
