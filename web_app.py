@@ -547,6 +547,9 @@ RESUMEN_HTML = """
     <div class="section">
       <div class="section-header">
         <h2>Resumen diario 100% terminadas (Par OK + CHECK LIST OK)</h2>
+        <form method="get" action="{{ url_for('descargar_resumen_100') }}">
+          <button type="submit" class="btn-descargar">⬇ Descargar Excel</button>
+        </form>
       </div>
 
       {% if resumen_diario_100 %}
@@ -1099,6 +1102,28 @@ def descargar_resumen_diario():
     df_out.to_excel(ruta, index=False)
 
     return send_from_directory(STATIC_DIR, "resumen_diario.xlsx", as_attachment=True)
+
+
+@app.route("/descargar_resumen_100")
+def descargar_resumen_100():
+    df = cargar_registros()
+    if df.empty:
+        df_out = pd.DataFrame({"Fecha": [], "Terminadas": []})
+    else:
+        df["Fecha"] = df["Fecha"].astype(str)
+        df_100 = df[(df["Par de apriete"] == "OK") & (df["CHECK LIST"] == "OK")]
+        if df_100.empty:
+            df_out = pd.DataFrame({"Fecha": [], "Terminadas": []})
+        else:
+            df_out = df_100.groupby("Fecha").size().reset_index(name="Terminadas")
+
+    STATIC_DIR.mkdir(exist_ok=True)
+    ruta = STATIC_DIR / "resumen_100_terminadas.xlsx"
+    df_out.to_excel(ruta, index=False)
+
+    return send_from_directory(
+        STATIC_DIR, "resumen_100_terminadas.xlsx", as_attachment=True
+    )
 
 
 @app.route("/descargar_detalle")
