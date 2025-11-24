@@ -498,7 +498,7 @@ FICHAJE_HTML = """
       border-radius:16px;
       box-shadow:0 4px 15px rgba(0,0,0,0.15);
       max-width:480px;
-      margin:0 auto;
+      margin:0 auto 16px auto;
       text-align:center;
     }
     .btn-fichar {
@@ -522,6 +522,51 @@ FICHAJE_HTML = """
       font-size:12px;
       color:#666;
       margin-top:10px;
+    }
+    /* Informe fichajes */
+    .card-report {
+      text-align:left;
+    }
+    .card-report h3 {
+      margin-top:0;
+      margin-bottom:8px;
+      text-align:left;
+    }
+    .filtro-label {
+      font-size:13px;
+      margin-top:6px;
+    }
+    .filtro-select {
+      width:100%;
+      padding:8px;
+      border-radius:8px;
+      border:1px solid #ccc;
+      font-size:13px;
+      box-sizing:border-box;
+      margin-top:2px;
+    }
+    .btn-descarga {
+      margin-top:10px;
+      width:100%;
+      padding:10px;
+      border:none;
+      border-radius:999px;
+      background:#1976d2;
+      color:#fff;
+      font-size:14px;
+      cursor:pointer;
+      text-align:center;
+      text-decoration:none;
+      display:inline-block;
+    }
+    .btn-ultimo {
+      background:#455a64;
+      margin-top:6px;
+    }
+    .help-text {
+      font-size:11px;
+      color:#666;
+      margin-top:6px;
     }
   </style>
   <script>
@@ -601,6 +646,45 @@ FICHAJE_HTML = """
         Se registrará la hora del servidor y, si está disponible, la posición GPS del dispositivo.
       </p>
     </div>
+
+    {% if usuario_rol in ['admin', 'jefe_obra'] %}
+      <div class="card card-report">
+        <h3>Informe de fichajes (Excel)</h3>
+        <form method="get" action="{{ url_for('descargar_fichajes_mes') }}">
+          <div class="filtro-label">Mes:</div>
+          <select name="mes" class="filtro-select">
+            {% for m in meses %}
+              <option value="{{ m.num }}" {% if m.num == mes_actual %}selected{% endif %}>
+                {{ m.nombre }}
+              </option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="anio" value="{{ anio_actual }}">
+
+          <div class="filtro-label">Trabajador:</div>
+          <select name="trabajador_id" class="filtro-select">
+            <option value="">(Todos)</option>
+            {% for t in trabajadores_lista %}
+              <option value="{{ t.id }}">{{ t.nombre }}</option>
+            {% endfor %}
+          </select>
+
+          <button type="submit" class="btn-descarga">
+            ⬇ Descargar mes seleccionado
+          </button>
+        </form>
+
+        <a href="{{ url_for('descargar_fichajes_mes', anio=anio_anterior, mes=mes_anterior) }}"
+           class="btn-descarga btn-ultimo">
+          ⬇ Descargar último mes completo (todos)
+        </a>
+
+        <div class="help-text">
+          El informe incluye: horas trabajadas, horas extra, vacaciones aprobadas,
+          días sin fichar y enlaces a la geolocalización (Google Maps).
+        </div>
+      </div>
+    {% endif %}
   </div>
 </body>
 </html>
@@ -1576,11 +1660,47 @@ def fichaje():
         guardar_fichajes(df)
         return redirect(url_for("fichaje"))
 
+    # GET: preparamos datos para el informe de fichajes
+    hoy = date.today()
+    anio_actual = hoy.year
+    mes_actual = hoy.month
+
+    if mes_actual == 1:
+        mes_anterior = 12
+        anio_anterior = anio_actual - 1
+    else:
+        mes_anterior = mes_actual - 1
+        anio_anterior = anio_actual
+
+    # Meses en texto (simple, en castellano)
+    nombres_meses = [
+        "",
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ]
+    meses = [
+        {"num": i, "nombre": nombres_meses[i]}
+        for i in range(1, 13)
+    ]
+
+    # Lista de trabajadores para el combo
+    trabajadores_id = mapa_trabajadores_por_id()
+    trabajadores_lista = [
+        {"id": tid, "nombre": nombre}
+        for tid, nombre in sorted(trabajadores_id.items(), key=lambda x: x[1])
+    ]
+
     return render_template_string(
         FICHAJE_HTML,
         usuario_nombre=usuario_nombre,
         usuario_rol=usuario_rol,
         common_header_css=COMMON_HEADER_CSS,
+        anio_actual=anio_actual,
+        mes_actual=mes_actual,
+        anio_anterior=anio_anterior,
+        mes_anterior=mes_anterior,
+        meses=meses,
+        trabajadores_lista=trabajadores_lista,
     )
 
 
@@ -1985,6 +2105,7 @@ def descargar_fichajes_mes():
     - Una fila por trabajador y día del mes
     - Indica si está de VACACIONES, NO FICHADO o TRABAJADO
     - Incluye horas, extras y geolocalización (lat/lon + links a Google Maps)
+    - Opcionalmente filtrado por trabajador
     """
     if not requiere_login():
         return redirect(url_for("login"))
@@ -1997,6 +2118,7 @@ def descargar_fichajes_mes():
     hoy = date.today()
     anio = request.args.get("anio", type=int) or hoy.year
     mes = request.args.get("mes", type=int) or hoy.month
+    trabajador_id_filtro = request.args.get("trabajador_id", type=int)
 
     df_f = cargar_fichajes()
     df_v = cargar_vacaciones()
@@ -2020,6 +2142,14 @@ def descargar_fichajes_mes():
     if not trabajadores_id:
         flash("No hay datos de trabajadores cargados.", "error")
         return redirect(url_for("estadisticas"))
+
+    # Si hay filtro de trabajador, limitar al seleccionado
+    if trabajador_id_filtro is not None:
+        if trabajador_id_filtro in trabajadores_id:
+            trabajadores_id = {trabajador_id_filtro: trabajadores_id[trabajador_id_filtro]}
+        else:
+            flash("Trabajador no encontrado para el informe.", "error")
+            return redirect(url_for("fichaje"))
 
     _, last_day = calendar.monthrange(anio, mes)
 
