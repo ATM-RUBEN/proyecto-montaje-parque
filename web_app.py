@@ -30,6 +30,7 @@ MAX_CAMPO = 10000
 MAX_MESA = 10000
 
 app = Flask(__name__)
+app.debug = True
 @app.route("/debug_trabajadores")
 def debug_trabajadores():
     import os
@@ -140,7 +141,16 @@ def formulario():
 
         flash("Registro guardado", "msg")
         return redirect(url_for("formulario"))
+@app.route("/debug_formulario")
+def debug_formulario():
+    try:
+        return formulario()
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        return f"<h1>ERROR EN FORMULARIO</h1><pre>{tb}</pre>"
 
+    
     return render_template_string(
         FICHAJE_HTML,
         common_header_css=COMMON_HEADER_CSS,
