@@ -118,6 +118,7 @@ def usuario_actual():
 @app.route("/formulario", methods=["GET", "POST"])
 def formulario():
     usuario = usuario_actual()
+<<<<<<< HEAD
     if not usuario:
         return redirect(url_for("login"))
 
@@ -141,14 +142,83 @@ def formulario():
 
         flash("Registro guardado", "msg")
         return redirect(url_for("formulario"))
+@app.route("/formulario", methods=["GET", "POST"])
+def formulario():
+    import traceback
+
+    try:
+        # 1) Usuario actual
+        usuario = usuario_actual()
+        if not usuario:
+            # Si por lo que sea no hay usuario, volvemos al login
+            return redirect(url_for("login"))
+
+        # 2) Si es POST, guardamos registro
+        if request.method == "POST":
+            df = cargar_registros()
+            nuevo = {
+                "Trabajador": usuario["id"],
+                "Nombre": usuario["nombre"],
+                "Fecha": request.form.get("fecha"),
+                "Hora inicio": request.form.get("hora_inicio"),
+                "Hora fin": request.form.get("hora_fin"),
+                "CT": request.form.get("ct"),
+                "Campo/Área": request.form.get("campo_area"),
+                "Nº Mesa": request.form.get("mesa"),
+                "Par de apriete": request.form.get("par"),
+                "CHECK LIST": request.form.get("checklist"),
+                "Observaciones": request.form.get("observaciones"),
+            }
+            df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
+
+            # Aquí seguimos usando tu función que guarda en Excel + BD
+            guardar_registros(df)
+
+            flash("Registro guardado", "msg")
+            return redirect(url_for("formulario"))
+
+        # 3) Si es GET, simplemente mostramos el formulario normal
+        return render_template_string(
+            FORMULARIO_HTML,
+            common_header_css=COMMON_HEADER_CSS,
+            usuario_nombre=usuario["nombre"],
+            usuario_rol=usuario["rol"],
+        )
+
+    except Exception:
+        # 4) CUALQUIER error nos lo enseña directamente en pantalla
+        tb = traceback.format_exc()
+        return f"<h1>ERROR EN /formulario</h1><pre>{tb}</pre>", 500
+
+
+        except Exception as e:
+            print("❌ ERROR EN FORMULARIO (POST):", e)
+            import traceback
+            traceback.print_exc()
+            return f"<h1>Error en formulario (POST)</h1><pre>{traceback.format_exc()}</pre>"
+
+    try:
+        # Render del formulario normal
+        return render_template_string(FORMULARIO_HTML, usuario_nombre=usuario["nombre"])
+    except Exception as e:
+        print("❌ ERROR renderizando formulario:", e)
+        import traceback
+        traceback.print_exc()
+        return f"<h1>Error renderizando formulario</h1><pre>{traceback.format_exc()}</pre>"
+
 @app.route("/debug_formulario")
 def debug_formulario():
     try:
-        return formulario()
+        usuario = usuario_actual()
+        return f"""
+        <h1>DEBUG FORMULARIO</h1>
+        <p><b>Usuario actual:</b> {usuario}</p>
+        """
     except Exception as e:
         import traceback
-        tb = traceback.format_exc()
-        return f"<h1>ERROR EN FORMULARIO</h1><pre>{tb}</pre>"
+        return f"<h1>ERROR EN DEBUG</h1><pre>{traceback.format_exc()}</pre>"
+
+>>>>>>> b7d0cd1 (Fix ruta formulario + debug)
 
     
     return render_template_string(
@@ -1192,4 +1262,8 @@ RESUMEN_HTML = """
 </html>
 """
 if __name__ == "__main__":
+<<<<<<< HEAD
     app.run(host="0.0.0.0", port=5000)
+=======
+    app.run(host="0.0.0.0", port=5000)
+>>>>>>> b7d0cd1 (Fix ruta formulario + debug)
