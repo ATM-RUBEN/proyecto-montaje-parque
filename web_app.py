@@ -78,6 +78,90 @@ def crear_tabla_registros_montaje():
 
 # --- CREAR TABLA REGISTROS -----------------
 crear_tabla_registros_montaje()
+@app.route("/", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        pin = request.form.get("pin", "").strip()
+
+        if pin in TRABAJADORES_PIN:
+            session["usuario_pin"] = pin
+            return redirect(url_for("formulario"))
+
+        flash("PIN incorrecto", "error")
+
+    return render_template_string(LOGIN_HTML)
+def usuario_actual():
+    pin = session.get("usuario_pin")
+    if pin and pin in TRABAJADORES_PIN:
+        return TRABAJADORES_PIN[pin]
+    return None
+@app.route("/formulario", methods=["GET", "POST"])
+def formulario():
+    usuario = usuario_actual()
+    if not usuario:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        df = cargar_registros()
+        nuevo = {
+            "Trabajador": usuario["id"],
+            "Nombre": usuario["nombre"],
+            "Fecha": request.form.get("fecha"),
+            "Hora inicio": request.form.get("hora_inicio"),
+            "Hora fin": request.form.get("hora_fin"),
+            "CT": request.form.get("ct"),
+            "Campo/Área": request.form.get("campo_area"),
+            "Nº Mesa": request.form.get("mesa"),
+            "Par de apriete": request.form.get("par"),
+            "CHECK LIST": request.form.get("checklist"),
+            "Observaciones": request.form.get("observaciones"),
+        }
+        df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
+        guardar_registros(df)
+
+        flash("Registro guardado", "msg")
+        return redirect(url_for("formulario"))
+
+    return render_template_string(
+        FICHAJE_HTML,
+        common_header_css=COMMON_HEADER_CSS,
+        usuario_nombre=usuario["nombre"],
+        usuario_rol=usuario["rol"],
+    )
+@app.route("/fichaje", methods=["GET", "POST"])
+def fichaje():
+    usuario = usuario_actual()
+    if not usuario:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        df = cargar_fichajes()
+        nuevo = {
+            "Trabajador": usuario["id"],
+            "Nombre": usuario["nombre"],
+            "Fecha": date.today(),
+            "Hora entrada": datetime.now().strftime("%H:%M:%S") if request.form["accion"] == "entrada" else None,
+            "Hora salida": datetime.now().strftime("%H:%M:%S") if request.form["accion"] == "salida" else None,
+            "Lat entrada": request.form.get("lat"),
+            "Lon entrada": request.form.get("lon"),
+        }
+        df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
+        guardar_fichajes(df)
+
+        flash("Fichaje registrado", "msg")
+        return redirect(url_for("fichaje"))
+
+    return render_template_string(
+        FICHAJE_HTML,
+        common_header_css=COMMON_HEADER_CSS,
+        usuario_nombre=usuario["nombre"],
+        usuario_rol=usuario["rol"],
+    )
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
 
 def guardar_registro_db(
     trabajador,
@@ -1066,3 +1150,5 @@ RESUMEN_HTML = """
 </body>
 </html>
 """
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
