@@ -55,6 +55,30 @@ def test_db():
     except Exception as e:
         return f"ERROR al conectar con la base de datos: {e}"
 
+def crear_tabla_registros_montaje():
+    sql = text("""
+        CREATE TABLE IF NOT EXISTS registros_montaje (
+            id SERIAL PRIMARY KEY,
+            trabajador INTEGER,
+            nombre TEXT,
+            fecha DATE,
+            hora_inicio TIME,
+            hora_fin TIME,
+            ct INTEGER,
+            campo_area TEXT,
+            mesa TEXT,
+            par_apriete TEXT,
+            checklist BOOLEAN,
+            observaciones TEXT,
+            creado_en TIMESTAMP DEFAULT NOW()
+        );
+    """)
+    with engine.begin() as conn:
+        conn.execute(sql)
+
+# --- CREAR TABLA REGISTROS -----------------
+crear_tabla_registros_montaje()
+
 
 # ---------------- UTILIDADES TRABAJADORES ----------------
 
