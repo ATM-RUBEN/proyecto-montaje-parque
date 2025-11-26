@@ -30,6 +30,25 @@ MAX_CAMPO = 10000
 MAX_MESA = 10000
 
 app = Flask(__name__)
+@app.route("/debug_trabajadores")
+def debug_trabajadores():
+    import os
+
+    path = EXCEL_TRABAJADORES
+    exists = os.path.exists(path)
+
+    msg = [f"Buscando archivo: {path}", f"¿Existe?: {exists}"]
+
+    if exists:
+        try:
+            df = pd.read_excel(path)
+            msg.append(f"Filas leídas: {len(df)}")
+            msg.append(f"Columnas: {list(df.columns)}")
+        except Exception as e:
+            msg.append(f"ERROR al leer Excel: {e}")
+
+    return "<br>".join(msg)
+
 app.secret_key = "cambia_esto_por_algo_mas_raro_y_largo"
 
 # ---------------- CONFIGURACIÓN BASE DE DATOS ----------------
