@@ -259,6 +259,18 @@ def cargar_trabajadores_desde_excel():
 
 
 TRABAJADORES_PIN = cargar_trabajadores_desde_excel()
+@app.route("/debug_login_pin")
+def debug_login_pin():
+    pin = request.args.get("pin", "").strip()
+    from pprint import pformat
+
+    info = TRABAJADORES_PIN.get(pin)
+    return (
+        f"<h1>Debug login PIN</h1>"
+        f"<p>PIN recibido: <b>{pin}</b></p>"
+        f"<p>Info en TRABAJADORES_PIN:</p>"
+        f"<pre>{pformat(info)}</pre>"
+    )
 
 
 def mapa_trabajadores_por_id():
