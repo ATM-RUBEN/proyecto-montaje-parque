@@ -79,6 +79,41 @@ def crear_tabla_registros_montaje():
 # --- CREAR TABLA REGISTROS -----------------
 crear_tabla_registros_montaje()
 
+def guardar_registro_db(
+    trabajador,
+    nombre,
+    fecha,
+    hora_inicio,
+    hora_fin,
+    ct,
+    campo_area,
+    mesa,
+    par_apriete,
+    checklist,
+    observaciones
+):
+    sql = text("""
+        INSERT INTO registros_montaje
+        (trabajador, nombre, fecha, hora_inicio, hora_fin, ct, campo_area, mesa, par_apriete, checklist, observaciones)
+        VALUES
+        (:trabajador, :nombre, :fecha, :hora_inicio, :hora_fin, :ct, :campo_area, :mesa, :par_apriete, :checklist, :observaciones)
+    """)
+    
+    with engine.begin() as conn:
+        conn.execute(sql, {
+            "trabajador": trabajador,
+            "nombre": nombre,
+            "fecha": fecha,
+            "hora_inicio": hora_inicio,
+            "hora_fin": hora_fin,
+            "ct": ct,
+            "campo_area": campo_area,
+            "mesa": mesa,
+            "par_apriete": par_apriete,
+            "checklist": checklist,
+            "observaciones": observaciones
+        })
+
 
 # ---------------- UTILIDADES TRABAJADORES ----------------
 
@@ -146,7 +181,89 @@ def cargar_registros():
 
 
 def guardar_registros(df):
+    """
+    Sigue guardando en Excel como hasta ahora
+    y además inserta el ÚLTIMO registro en la tabla registros_montaje.
+    """
+    # 1) Guardar en Excel (como siempre)
     df.to_excel(EXCEL_REGISTRO, index=False)
+
+    # 2) Guardar el último registro en PostgreSQL
+    if df.empty:
+        return
+
+    # Nos quedamos con la última fila añadida
+    ultima = df.iloc[-1]
+
+    # Transformaciones suaves de tipos
+    fecha = ultima.get("Fecha")
+    if pd.isna(fecha):
+        fecha = None
+    elif isinstance(fecha, datetime):
+        fecha = fecha.date()
+
+    hora_inicio = ultima.get("Hora inicio")
+    if pd.isna(hora_inicio):
+        hora_inicio = None
+    elif isinstance(hora_inicio, datetime):
+        hora_inicio = hora_inicio.time()
+
+    hora_fin = ultima.get("Hora fin")
+    if pd.isna(hora_fin):
+        hora_fin = None
+    elif isinstance(hora_fin, datetime):
+        hora_fin = hora_fin.time()
+
+    ct = ultima.get("CT")
+    if pd.isna(ct):
+        ct = None
+    else:
+        try:
+            ct = int(ct)
+        except Exception:
+            ct = None
+
+    checklist_raw = ultima.get("CHECK LIST")
+    if pd.isna(checklist_raw):
+        checklist = False
+    elif isinstance(checklist_raw, str):
+        checklist = checklist_raw.strip().lower() in ("1", "x", "sí", "si", "true", "ok")
+    else:
+        checklist = bool(checklist_raw)
+
+    trabajador = ultima.get("Trabajador")
+    nombre = ultima.get("Nombre")
+    campo_area = ultima.get("Campo/Área")
+    mesa = ultima.get("Nº Mesa")
+    par_apriete = ultima.get("Par de apriete")
+    observaciones = ultima.get("Observaciones")
+
+    sql = text("""
+        INSERT INTO registros_montaje
+        (trabajador, nombre, fecha, hora_inicio, hora_fin, ct, campo_area, mesa,
+         par_apriete, checklist, observaciones)
+        VALUES
+        (:trabajador, :nombre, :fecha, :hora_inicio, :hora_fin, :ct, :campo_area,
+         :mesa, :par_apriete, :checklist, :observaciones)
+    """)
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(sql, {
+                "trabajador": trabajador,
+                "nombre": nombre,
+                "fecha": fecha,
+                "hora_inicio": hora_inicio,
+                "hora_fin": hora_fin,
+                "ct": ct,
+                "campo_area": campo_area,
+                "mesa": mesa,
+                "par_apriete": par_apriete,
+                "checklist": checklist,
+                "observaciones": observaciones,
+            })
+    except Exception as e:
+        print("⚠ Error insertando en registros_montaje:", e)
 
 
 # ---------------- UTILIDADES FICHAJES ----------------
@@ -949,4 +1066,3 @@ RESUMEN_HTML = """
 </body>
 </html>
 """
-
