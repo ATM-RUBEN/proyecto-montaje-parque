@@ -604,26 +604,24 @@ FORMULARIO_HTML = """
   <style>
     body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:16px; }
     {{ common_header_css|safe }}
-
     .card {
       background:#fff;
       padding:20px 18px 24px;
       border-radius:16px;
       box-shadow:0 4px 15px rgba(0,0,0,0.15);
       max-width:480px;
-      margin:0 auto 16px auto;
+      margin:0 auto;
     }
     label { display:block; margin-top:10px; font-size:14px; }
-    input, textarea, select {
+    input, select, textarea {
       width:100%;
       padding:8px;
       margin-top:4px;
       border-radius:8px;
       border:1px solid #ccc;
-      font-size:14px;
       box-sizing:border-box;
+      font-size:14px;
     }
-    textarea { min-height:70px; }
     button {
       margin-top:16px;
       width:100%;
@@ -635,6 +633,8 @@ FORMULARIO_HTML = """
       font-size:16px;
       cursor:pointer;
     }
+    .row-2col { display:flex; gap:8px; }
+    .row-2col > div { flex:1; }
   </style>
 </head>
 <body>
@@ -672,38 +672,40 @@ FORMULARIO_HTML = """
       {% endwith %}
 
       <h3>Nuevo registro de montaje</h3>
-
       <form method="post">
-        <label>Fecha:</label>
+        <label>Fecha</label>
         <input type="date" name="fecha" value="{{ hoy }}" required>
 
-        <label>Hora inicio:</label>
-        <input type="time" name="hora_inicio" required>
+        <div class="row-2col">
+          <div>
+            <label>Hora inicio</label>
+            <input type="time" name="hora_inicio">
+          </div>
+          <div>
+            <label>Hora fin</label>
+            <input type="time" name="hora_fin">
+          </div>
+        </div>
 
-        <label>Hora fin:</label>
-        <input type="time" name="hora_fin">
+        <label>CT</label>
+        <input type="number" name="ct">
 
-        <label>CT:</label>
-        <input type="number" name="ct" min="1" max="100">
-
-        <label>Campo / Área:</label>
+        <label>Campo / Área</label>
         <input type="text" name="campo_area">
 
-        <label>Nº Mesa:</label>
+        <label>Nº Mesa</label>
         <input type="text" name="mesa">
 
-        <label>Par de apriete:</label>
+        <label>Par de apriete</label>
         <input type="text" name="par">
 
-        <label>Checklist completado:</label>
-        <select name="checklist">
-          <option value="">(Sin marcar)</option>
-          <option value="1">Sí</option>
-          <option value="0">No</option>
-        </select>
+        <label>
+          <input type="checkbox" name="checklist" value="1">
+          Checklist completado
+        </label>
 
-        <label>Observaciones:</label>
-        <textarea name="observaciones"></textarea>
+        <label>Observaciones</label>
+        <textarea name="observaciones" rows="3"></textarea>
 
         <button type="submit">Guardar registro</button>
       </form>
