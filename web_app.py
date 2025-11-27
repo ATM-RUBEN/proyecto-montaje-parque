@@ -117,43 +117,16 @@ def usuario_actual():
     return None
 @app.route("/formulario", methods=["GET", "POST"])
 def formulario():
-    usuario = usuario_actual()
-<<<<<<< HEAD
-    if not usuario:
-        return redirect(url_for("login"))
-
-    if request.method == "POST":
-        df = cargar_registros()
-        nuevo = {
-            "Trabajador": usuario["id"],
-            "Nombre": usuario["nombre"],
-            "Fecha": request.form.get("fecha"),
-            "Hora inicio": request.form.get("hora_inicio"),
-            "Hora fin": request.form.get("hora_fin"),
-            "CT": request.form.get("ct"),
-            "Campo/Área": request.form.get("campo_area"),
-            "Nº Mesa": request.form.get("mesa"),
-            "Par de apriete": request.form.get("par"),
-            "CHECK LIST": request.form.get("checklist"),
-            "Observaciones": request.form.get("observaciones"),
-        }
-        df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
-        guardar_registros(df)
-
-        flash("Registro guardado", "msg")
-        return redirect(url_for("formulario"))
-@app.route("/formulario", methods=["GET", "POST"])
-def formulario():
     import traceback
 
     try:
         # 1) Usuario actual
         usuario = usuario_actual()
         if not usuario:
-            # Si por lo que sea no hay usuario, volvemos al login
+            # Si no hay usuario logueado, volvemos al login
             return redirect(url_for("login"))
 
-        # 2) Si es POST, guardamos registro
+        # 2) Si es POST, guardamos el registro
         if request.method == "POST":
             df = cargar_registros()
             nuevo = {
@@ -171,13 +144,13 @@ def formulario():
             }
             df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
 
-            # Aquí seguimos usando tu función que guarda en Excel + BD
+            # Guarda en Excel + BD
             guardar_registros(df)
 
             flash("Registro guardado", "msg")
             return redirect(url_for("formulario"))
 
-        # 3) Si es GET, simplemente mostramos el formulario normal
+        # 3) Si es GET, sólo mostramos el formulario
         return render_template_string(
             FORMULARIO_HTML,
             common_header_css=COMMON_HEADER_CSS,
@@ -186,25 +159,9 @@ def formulario():
         )
 
     except Exception:
-        # 4) CUALQUIER error nos lo enseña directamente en pantalla
         tb = traceback.format_exc()
         return f"<h1>ERROR EN /formulario</h1><pre>{tb}</pre>", 500
 
-
-        except Exception as e:
-            print("❌ ERROR EN FORMULARIO (POST):", e)
-            import traceback
-            traceback.print_exc()
-            return f"<h1>Error en formulario (POST)</h1><pre>{traceback.format_exc()}</pre>"
-
-    try:
-        # Render del formulario normal
-        return render_template_string(FORMULARIO_HTML, usuario_nombre=usuario["nombre"])
-    except Exception as e:
-        print("❌ ERROR renderizando formulario:", e)
-        import traceback
-        traceback.print_exc()
-        return f"<h1>Error renderizando formulario</h1><pre>{traceback.format_exc()}</pre>"
 
 @app.route("/debug_formulario")
 def debug_formulario():
@@ -214,19 +171,10 @@ def debug_formulario():
         <h1>DEBUG FORMULARIO</h1>
         <p><b>Usuario actual:</b> {usuario}</p>
         """
-    except Exception as e:
+    except Exception:
         import traceback
         return f"<h1>ERROR EN DEBUG</h1><pre>{traceback.format_exc()}</pre>"
 
->>>>>>> b7d0cd1 (Fix ruta formulario + debug)
-
-    
-    return render_template_string(
-        FICHAJE_HTML,
-        common_header_css=COMMON_HEADER_CSS,
-        usuario_nombre=usuario["nombre"],
-        usuario_rol=usuario["rol"],
-    )
 @app.route("/fichaje", methods=["GET", "POST"])
 def fichaje():
     usuario = usuario_actual()
@@ -635,6 +583,119 @@ button {
 </body>
 </html>
 """
+FORMULARIO_HTML = """
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registro de montaje</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:16px; }
+    {{ common_header_css|safe }}
+    .card {
+      background:#fff;
+      padding:20px 18px 24px;
+      border-radius:16px;
+      box-shadow:0 4px 15px rgba(0,0,0,0.15);
+      max-width:480px;
+      margin:0 auto;
+    }
+    label { display:block; margin-top:10px; font-size:14px; }
+    input, textarea, select {
+      width:100%;
+      padding:10px;
+      margin-top:4px;
+      border-radius:10px;
+      border:1px solid #ccc;
+      font-size:14px;
+      box-sizing:border-box;
+    }
+    button {
+      margin-top:16px;
+      width:100%;
+      padding:12px;
+      border:none;
+      border-radius:999px;
+      background:#e30613;
+      color:#fff;
+      font-size:16px;
+      cursor:pointer;
+    }
+    .small { font-size:12px; color:#666; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-logo">
+        <img src="{{ url_for('static', filename='atm_logo.png') }}" alt="ATM España">
+      </div>
+      <div class="app-user-name">{{ usuario_nombre }}</div>
+      <div class="app-user-role">
+        <span class="app-user-role-icon">
+          {% if usuario_rol == 'admin' %}👑{% elif usuario_rol == 'jefe_obra' %}🦺{% else %}👷{% endif %}
+        </span>
+        <span>{{ usuario_rol|capitalize }}</span>
+      </div>
+      <nav class="app-nav">
+        <a href="{{ url_for('formulario') }}">📝 Formulario</a>
+        <a href="{{ url_for('fichaje') }}">⏱ Fichar</a>
+        <a href="{{ url_for('vacaciones') }}">🏖 Vacaciones</a>
+        {% if usuario_rol in ['admin', 'jefe_obra'] %}
+          <a href="{{ url_for('resumen') }}">📋 Resumen</a>
+          <a href="{{ url_for('estadisticas') }}">📊 Estadísticas</a>
+        {% endif %}
+        <a href="{{ url_for('logout') }}" class="logout">⏻ Salir</a>
+      </nav>
+    </header>
+
+    <div class="card">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="{{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <h3>Registro de montaje</h3>
+      <form method="post">
+        <label>Fecha</label>
+        <input type="date" name="fecha" required>
+
+        <label>Hora inicio</label>
+        <input type="time" name="hora_inicio">
+
+        <label>Hora fin</label>
+        <input type="time" name="hora_fin">
+
+        <label>CT</label>
+        <input type="number" name="ct" min="0" max="100">
+
+        <label>Campo / Área</label>
+        <input type="text" name="campo_area">
+
+        <label>Nº Mesa</label>
+        <input type="text" name="mesa">
+
+        <label>Par de apriete</label>
+        <input type="text" name="par">
+
+        <label>Checklist (escribe 1, X, Sí...)</label>
+        <input type="text" name="checklist">
+
+        <label>Observaciones</label>
+        <textarea name="observaciones" rows="3"></textarea>
+
+        <button type="submit">Guardar registro</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
 FICHAJE_HTML = """
 <!doctype html>
 <html lang="es">
@@ -1262,8 +1323,4 @@ RESUMEN_HTML = """
 </html>
 """
 if __name__ == "__main__":
-<<<<<<< HEAD
     app.run(host="0.0.0.0", port=5000)
-=======
-    app.run(host="0.0.0.0", port=5000)
->>>>>>> b7d0cd1 (Fix ruta formulario + debug)
