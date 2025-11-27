@@ -155,15 +155,36 @@ def formulario():
 
 @app.route("/debug_formulario")
 def debug_formulario():
+    import traceback
+
+    html = ["<h1>DEBUG FORMULARIO</h1>"]
+
     try:
         usuario = usuario_actual()
-        return f"""
-        <h1>DEBUG FORMULARIO</h1>
-        <p><b>Usuario actual:</b> {usuario}</p>
-        """
+        html.append(f"<p>Usuario actual: {usuario!r}</p>")
     except Exception:
-        import traceback
-        return f"<h1>ERROR EN DEBUG</h1><pre>{traceback.format_exc()}</pre>"
+        html.append("<h2>Error al obtener usuario_actual()</h2>")
+        html.append("<pre>" + traceback.format_exc() + "</pre>")
+        return "".join(html)
+
+    try:
+        # Probamos a renderizar la plantilla exactamente igual que hace /formulario
+        pagina = render_template_string(
+            FORMULARIO_HTML,
+            common_header_css=COMMON_HEADER_CSS,
+            usuario_nombre=usuario["nombre"],
+            usuario_rol=usuario["rol"],
+            hoy=date.today().isoformat(),
+        )
+        html.append("<h2>Render OK</h2>")
+        html.append(pagina)
+        return "".join(html)
+
+    except Exception:
+        html.append("<h2>ERROR RENDERIZANDO FORMULARIO_HTML</h2>")
+        html.append("<pre>" + traceback.format_exc() + "</pre>")
+        return "".join(html)
+
 
 @app.route("/fichaje", methods=["GET", "POST"])
 def fichaje():
