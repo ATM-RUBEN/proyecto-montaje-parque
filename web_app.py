@@ -117,50 +117,40 @@ def usuario_actual():
     return None
 @app.route("/formulario", methods=["GET", "POST"])
 def formulario():
-    import traceback
+    usuario = usuario_actual()
+    if not usuario:
+        return redirect(url_for("login"))
 
-    try:
-        # 1) Usuario actual
-        usuario = usuario_actual()
-        if not usuario:
-            # Si no hay usuario logueado, volvemos al login
-            return redirect(url_for("login"))
+    if request.method == "POST":
+        df = cargar_registros()
+        nuevo = {
+            "Trabajador": usuario["id"],
+            "Nombre": usuario["nombre"],
+            "Fecha": request.form.get("fecha"),
+            "Hora inicio": request.form.get("hora_inicio"),
+            "Hora fin": request.form.get("hora_fin"),
+            "CT": request.form.get("ct"),
+            "Campo/Área": request.form.get("campo_area"),
+            "Nº Mesa": request.form.get("mesa"),
+            "Par de apriete": request.form.get("par"),
+            "CHECK LIST": request.form.get("checklist"),
+            "Observaciones": request.form.get("observaciones"),
+        }
+        df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
+        guardar_registros(df)
 
-        # 2) Si es POST, guardamos el registro
-        if request.method == "POST":
-            df = cargar_registros()
-            nuevo = {
-                "Trabajador": usuario["id"],
-                "Nombre": usuario["nombre"],
-                "Fecha": request.form.get("fecha"),
-                "Hora inicio": request.form.get("hora_inicio"),
-                "Hora fin": request.form.get("hora_fin"),
-                "CT": request.form.get("ct"),
-                "Campo/Área": request.form.get("campo_area"),
-                "Nº Mesa": request.form.get("mesa"),
-                "Par de apriete": request.form.get("par"),
-                "CHECK LIST": request.form.get("checklist"),
-                "Observaciones": request.form.get("observaciones"),
-            }
-            df = pd.concat([df, pd.DataFrame([nuevo])], ignore_index=True)
+        flash("Registro guardado", "msg")
+        return redirect(url_for("formulario"))
 
-            # Guarda en Excel + BD
-            guardar_registros(df)
+    # GET: pintar formulario
+    return render_template_string(
+        FORMULARIO_HTML,
+        common_header_css=COMMON_HEADER_CSS,
+        usuario_nombre=usuario["nombre"],
+        usuario_rol=usuario["rol"],
+        hoy=date.today().isoformat(),
+    )
 
-            flash("Registro guardado", "msg")
-            return redirect(url_for("formulario"))
-
-        # 3) Si es GET, sólo mostramos el formulario
-        return render_template_string(
-            FORMULARIO_HTML,
-            common_header_css=COMMON_HEADER_CSS,
-            usuario_nombre=usuario["nombre"],
-            usuario_rol=usuario["rol"],
-        )
-
-    except Exception:
-        tb = traceback.format_exc()
-        return f"<h1>ERROR EN /formulario</h1><pre>{tb}</pre>", 500
 
 
 @app.route("/debug_formulario")
@@ -593,24 +583,26 @@ FORMULARIO_HTML = """
   <style>
     body { font-family: Arial, sans-serif; background:#f4f4f4; margin:0; padding:16px; }
     {{ common_header_css|safe }}
+
     .card {
       background:#fff;
       padding:20px 18px 24px;
       border-radius:16px;
       box-shadow:0 4px 15px rgba(0,0,0,0.15);
       max-width:480px;
-      margin:0 auto;
+      margin:0 auto 16px auto;
     }
     label { display:block; margin-top:10px; font-size:14px; }
     input, textarea, select {
       width:100%;
-      padding:10px;
+      padding:8px;
       margin-top:4px;
-      border-radius:10px;
+      border-radius:8px;
       border:1px solid #ccc;
       font-size:14px;
       box-sizing:border-box;
     }
+    textarea { min-height:70px; }
     button {
       margin-top:16px;
       width:100%;
@@ -622,7 +614,6 @@ FORMULARIO_HTML = """
       font-size:16px;
       cursor:pointer;
     }
-    .small { font-size:12px; color:#666; margin-top:8px; }
   </style>
 </head>
 <body>
@@ -659,34 +650,39 @@ FORMULARIO_HTML = """
         {% endif %}
       {% endwith %}
 
-      <h3>Registro de montaje</h3>
+      <h3>Nuevo registro de montaje</h3>
+
       <form method="post">
-        <label>Fecha</label>
-        <input type="date" name="fecha" required>
+        <label>Fecha:</label>
+        <input type="date" name="fecha" value="{{ hoy }}" required>
 
-        <label>Hora inicio</label>
-        <input type="time" name="hora_inicio">
+        <label>Hora inicio:</label>
+        <input type="time" name="hora_inicio" required>
 
-        <label>Hora fin</label>
+        <label>Hora fin:</label>
         <input type="time" name="hora_fin">
 
-        <label>CT</label>
-        <input type="number" name="ct" min="0" max="100">
+        <label>CT:</label>
+        <input type="number" name="ct" min="1" max="100">
 
-        <label>Campo / Área</label>
+        <label>Campo / Área:</label>
         <input type="text" name="campo_area">
 
-        <label>Nº Mesa</label>
+        <label>Nº Mesa:</label>
         <input type="text" name="mesa">
 
-        <label>Par de apriete</label>
+        <label>Par de apriete:</label>
         <input type="text" name="par">
 
-        <label>Checklist (escribe 1, X, Sí...)</label>
-        <input type="text" name="checklist">
+        <label>Checklist completado:</label>
+        <select name="checklist">
+          <option value="">(Sin marcar)</option>
+          <option value="1">Sí</option>
+          <option value="0">No</option>
+        </select>
 
-        <label>Observaciones</label>
-        <textarea name="observaciones" rows="3"></textarea>
+        <label>Observaciones:</label>
+        <textarea name="observaciones"></textarea>
 
         <button type="submit">Guardar registro</button>
       </form>
@@ -1017,6 +1013,7 @@ VACACIONES_HTML = """
 </body>
 </html>
 """
+
 RESUMEN_HTML = """
 <!doctype html>
 <html lang="es">
